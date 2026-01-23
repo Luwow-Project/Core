@@ -11,7 +11,6 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib_archive)
 
 # Add targets for this project's modules
-add_library(Luwow.Gui STATIC)
 add_library(Luwow.Engine STATIC)
 add_executable(Luwow.LCompile)
 add_executable(Luwow.LRun)
@@ -29,18 +28,9 @@ target_include_directories(Luwow.Engine PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Engine
 )
 
-target_include_directories(Luwow.Gui PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/Gui
-    ${CMAKE_SOURCE_DIR}/src/Gui/Windows
-    ${CMAKE_SOURCE_DIR}/src/Engine
-)
-
-#target_include_directories(Luwow.Gui.dll PRIVATE ${CMAKE_SOURCE_DIR}/src/Gui ${CMAKE_SOURCE_DIR}/src/Engine)
-
 target_include_directories(Luwow.LRun PRIVATE
     ${CMAKE_SOURCE_DIR}/src/LRun
     ${CMAKE_SOURCE_DIR}/src/Engine
-    ${CMAKE_SOURCE_DIR}/src/Gui ${CMAKE_SOURCE_DIR}/src/Gui/Windows
 )
 
 target_include_directories(Luwow.LCompile
@@ -51,15 +41,7 @@ target_include_directories(Luwow.LCompile
 target_include_directories(Luwow.LDebug PRIVATE
     ${CMAKE_SOURCE_DIR}/src/LDebug
     ${CMAKE_SOURCE_DIR}/src/Engine
-    ${CMAKE_SOURCE_DIR}/src/Gui
-    ${CMAKE_SOURCE_DIR}/src/Gui/Windows
 )
-
-# Set up target link dependencies
-target_link_libraries(Luwow.Gui PRIVATE
-    Luwow.Engine
-)
-#target_link_libraries(Luwow.Gui.dll PRIVATE Luwow.Engine)
 
 target_link_libraries(Luwow.Engine PUBLIC
     Luau.VM Luau.Common
@@ -67,7 +49,6 @@ target_link_libraries(Luwow.Engine PUBLIC
 
 target_link_libraries(Luwow.LRun PRIVATE
     Luwow.Engine
-    Luwow.Gui
 )
 
 target_link_libraries(Luwow.LCompile PRIVATE
@@ -80,7 +61,6 @@ target_link_libraries(Luwow.LCompile PRIVATE
 
 target_link_libraries(Luwow.LDebug PRIVATE
     Luwow.Engine
-    Luwow.Gui
     Luau.Ast
     Luau.Compiler
     Luau.VM
@@ -88,7 +68,6 @@ target_link_libraries(Luwow.LDebug PRIVATE
 )
 
 # Set up target properties
-#set_target_properties(Luwow.Gui.dll PROPERTIES OUTPUT_NAME gui)
 set_target_properties(Luwow.LCompile PROPERTIES OUTPUT_NAME lcompile)
 set_target_properties(Luwow.LRun PROPERTIES OUTPUT_NAME lrun)
 set_target_properties(Luwow.LDebug PROPERTIES OUTPUT_NAME ldebug)

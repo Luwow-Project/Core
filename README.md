@@ -22,8 +22,8 @@ And 2 libraries:
 
 ### Supported Platforms
 
-- Windows (Microsoft Visual Studio)
-- MacOS (planned)
+- Windows (Microsoft Visual Code + Visual C++ compiler)
+- MacOS (Microsoft Visual Studio Code + XCode compiler)
 - iPadOS (planned)
 
 ## Setup Instructions
@@ -33,6 +33,11 @@ And 2 libraries:
 ```bash
 git clone https://github.com/MikeFried/Luwow Luwow --recurse-submodules
 cd Luwow
+```
+
+If you forget the --recurse-submodules flag, you can follow up with:
+```bash
+git submodules update --init --recursive
 ```
 
 ### 2. Build the Project

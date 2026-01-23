@@ -12,7 +12,6 @@ target_sources(Luwow.LRemoteDebug
 )
 target_link_libraries(Luwow.LRemoteDebug PRIVATE
     Luwow.Engine
-    Luwow.Gui
     Luau.VM
     Luau.Compiler
     Luau.CLI.lib
@@ -29,8 +28,6 @@ target_include_directories(Luwow.LRemoteDebug PRIVATE
     ${LUAU_ROOT}/CLI
     ${LUAU_ROOT}/Config/include
     ${CMAKE_SOURCE_DIR}/src/Engine
-    ${CMAKE_SOURCE_DIR}/src/Gui
-    ${CMAKE_SOURCE_DIR}/src/Gui/Windows
     ${CMAKE_SOURCE_DIR}/extern/luau-debugger/debugger/include
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
