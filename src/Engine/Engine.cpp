@@ -16,7 +16,7 @@ static std::unordered_map<std::string, std::shared_ptr<ILuauModule>> globalModul
 }
 
 Engine::Engine(Package context, std::filesystem::path filePath) :
-    L(nullptr),
+    mainState(nullptr),
     usesCompiler(false),
     usesDebuggerNewLuauCallback(false),
     compilerCallback(nullptr),
@@ -30,11 +30,11 @@ Engine::Engine(Package context, std::filesystem::path filePath) :
 {}
 
 Engine::~Engine() {
-    if (L) {
+    if (mainState) {
         for (auto& [name, ref] : luauModuleRefs) {
-            lua_unref(L, ref);
+            lua_unref(mainState, ref);
         }
-        lua_close(L);
+        lua_close(mainState);
     }
 }
 
@@ -54,13 +54,12 @@ void Engine::setMessagePumpCallback(MessagePumpCallbackType callback) {
 }
 
 void Engine::initialize() {
-    L = luaL_newstate();
-    if (!L) {
+    mainState = luaL_newstate();
+    if (!mainState) {
         throw std::runtime_error("Failed to create Lua state");
     }
 
-    luaL_openlibs(L);
-
+    luaL_openlibs(mainState);
     initializeRequire();
 }
 
@@ -71,17 +70,21 @@ static int static_require(lua_State* L) {
         luaL_error(L, "Internal error: Engine not found");
         return 0;
     }
-    return engine->require(moduleName);
+    return engine->require(L, moduleName);
 }
 
 void Engine::initializeRequire() {
-    lua_pushlightuserdata(L, this);
-    lua_pushcclosure(L, static_require, "require", EngineTag);
-    lua_setglobal(L, "require");
+    lua_pushlightuserdata(mainState, this);
+    lua_pushcclosure(mainState, static_require, "require", EngineTag);
+    lua_setglobal(mainState, "require");
+    luaL_sandbox(mainState);
 }
 
-int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode) {
-    int result = luau_load(L, moduleName.c_str(), bytecode.data(), bytecode.size(), 0);
+int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode) {
+    lua_State* T = lua_newthread(L);
+    luaL_sandboxthread(T);
+
+    int result = luau_load(T, chunkName.c_str(), bytecode.data(), bytecode.size(), 0);
     if (result != 0) {
         luaL_error(L, "Failed to load bytecode for module: %s", lua_tostring(L, -1));
         lua_pop(L, 1);
@@ -89,21 +92,29 @@ int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, 
     }
 
     if (usesDebuggerNewLuauCallback) {
-        debuggerNewLuauCallback(L, moduleName, false);
+        debuggerNewLuauCallback(T, chunkName, false);
     }
 
-    // Execute the module function to get its result
-    if (lua_pcall(L, 0, 1, 0) != 0) {
-        luaL_error(L, "Failed to execute module: %s", lua_tostring(L, -1));
-        lua_pop(L, 1);
+    int status = lua_resume(T, nullptr, 0);
+    if (status != LUA_OK) {
+        std::cout << (status == LUA_YIELD ? "Unexpected yield" : "Could not execute module: " + lua_tostring(T, -1)) << std::endl;
+        lua_pop(L, -1);
         return 0;
     }
+
+    lua_pop(L, 1);
+    return 1;
+}
+
+int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode) {
+    int status = executeModule(L, moduleName, bytecode);
+    if (!status) return 0;
 
     luauModuleRefs[moduleName] = lua_ref(L, -1);
     return 1;
 }
 
-int Engine::require(const std::string& moduleName) {
+int Engine::require(lua_State* L, const std::string& moduleName) {
     // TODO: Make this conformant to the require library
 
     // Check if the module is already loaded
@@ -169,34 +180,25 @@ int Engine::require(const std::string& moduleName) {
 
 void Engine::run() {
     try {
+        std::string chunkName;
+        std::string bytecode;
+
         if (usesCompiler) {
             // Compile the first file in the package
-            std::string bytecode;
             compilerCallback(filePath.string(), bytecode);
-            int result = luau_load(L, filePath.string().c_str(), bytecode.data(), bytecode.size(), 0);
-            if (result != 0) {
-                throw std::runtime_error("Failed to load bytecode for script: " + filePath.string());
-            }
+            chunkName = filePath.string();
         } else {
             // Load bytecode from the first file in the package
             if (package.getFileCount() == 0) {
                 throw std::runtime_error("Package has no files");
             }
-            std::string bytecode = package.getFileContent(0);
-            int result = luau_load(L, package.getFileName(0).c_str(), bytecode.data(), bytecode.size(), 0);
-            if (result != 0) {
-                throw std::runtime_error("Failed to load bytecode for script: " + filePath.string());
-            }
+
+            bytecode = package.getFileContent(0);
+            chunkName = package.getFileName(0).c_str(); // TODO: Update this to better point at a main module.
         }
 
-        if (usesDebuggerNewLuauCallback) {
-            debuggerNewLuauCallback(L, filePath.string(), true);
-        }
-
-        if (lua_pcall(L, 0, 0, 0) != 0) {
-            std::cerr << "Failed to execute script: " << lua_tostring(L, -1) << std::endl;
-            lua_pop(L, 1);
-        }
+        int status = executeModule(mainState, chunkName, bytecode);
+        if (!status) throw std::runtime_error("Could not execute module: " + chunkName);
 
         if (usesMessagePump) {
             messagePumpCallback();

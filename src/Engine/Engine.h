@@ -31,14 +31,14 @@ public:
     // Initializes the Luau State with built-ins
     void initialize();
     void initializeRequire();
-    int require(const std::string& moduleName);
+    int require(lua_State* L, const std::string& moduleName);
     int loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode);
+    int executeModule(lua_State* L, const std::string& moduleName, const std::string& bytecode);
     void run();
 
-    lua_State* getMainState() { return L; }
-
+    lua_State* getMainState() { return mainState; };
 private:
-    lua_State* L;
+    lua_State* mainState;
     bool usesCompiler;
     CompilerCallbackType compilerCallback;
     bool usesDebuggerNewLuauCallback;
