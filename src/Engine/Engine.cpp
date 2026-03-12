@@ -113,13 +113,6 @@ int Engine::require(const std::string& moduleName) {
         return 1;
     }
 
-    // Is the module in the package?
-    int index = package.indexOfFile(moduleName);
-    if (index != -1) {
-        std::string bytecode = package.getFileContent(index);
-        return loadModuleFromBytecode(L, moduleName, bytecode);
-    }
-
     // Is the module in internal modules?
     auto module = globalModules.find(moduleName);
     if (module != globalModules.end()) {
@@ -134,13 +127,20 @@ int Engine::require(const std::string& moduleName) {
         for (int i = 0; exports[i].name != nullptr; i++)
         {
             // Create a closure that captures the module instance
-            lua_pushlightuserdata(L, module->second.get());
+            lua_pushlightuserdata(L, initializedModule);
             lua_pushcclosure(L, exports[i].func, exports[i].name, 1);
             lua_setfield(L, -2, exports[i].name);
         }
         lua_setreadonly(L, -1, 1);
         luauModuleRefs[moduleName] = lua_ref(L, -1);
         return 1;
+    }
+
+    // Is the module in the package?
+    int index = package.indexOfFile(moduleName);
+    if (index != -1) {
+        std::string bytecode = package.getFileContent(index);
+        return loadModuleFromBytecode(L, moduleName, bytecode);
     }
 
     // Can we find a DLL with the module name?
