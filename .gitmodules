@@ -1,9 +1,0 @@
-[submodule "extern/Luau"]
-	path = extern/Luau
-	url = https://github.com/Roblox/luau.git
-[submodule "extern/luau-debugger"]
-	path = extern/luau-debugger
-	url = https://github.com/sssooonnnggg/luau-debugger
-[submodule "extern/cppdap"]
-	path = extern/cppdap
-	url = https://github.com/google/cppdap

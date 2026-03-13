@@ -97,7 +97,7 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
 
     int status = lua_resume(T, nullptr, 0);
     if (status != LUA_OK) {
-        std::cout << (status == LUA_YIELD ? "Unexpected yield" : "Could not execute module: " + lua_tostring(T, -1)) << std::endl;
+        std::cout << (status == LUA_YIELD ? "Unexpected yield" : "Could not execute module: " + std::string(lua_tostring(T, -1))) << std::endl;
         lua_pop(L, -1);
         return 0;
     }
