@@ -51,7 +51,7 @@ bool Package::save(const std::string& packagePath) {
     std::ofstream out(packagePath, std::ios::out | std::ios::binary);
     if (!out)
     {
-        std::cerr << "Could not open output file: " << packagePath << std::endl;
+        // std::cerr << "Could not open output file: " << packagePath << std::endl;
         return false;
     }
 
@@ -96,7 +96,7 @@ bool Package::load(const std::string& packagePath) {
     file.seekg(-sizeof(signature), std::ios::end);
     file.read(reinterpret_cast<char*>(&signature), sizeof(signature));
     if (signature != packageSignature) {
-        std::cerr << "Invalid signature in package: " << packagePath << std::endl;
+        // std::cerr << "Invalid signature in package: " << packagePath << std::endl;
         return false;
     }
 
@@ -112,7 +112,7 @@ bool Package::load(const std::string& packagePath) {
 
     // Validate that the file is equal to or longer than the total size of the package
     if (packageSize - sizeof(packageSize) > totalSize) {
-        std::cerr << "Can not read the package from the end of the file - it is too large to fit." << std::endl;
+        // std::cerr << "Can not read the package from the end of the file - it is too large to fit." << std::endl;
         return false;
     }
 

@@ -29,7 +29,7 @@ void compilerCallback(const std::filesystem::path& modulePath, std::string& resu
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: ldebug <script.luau>" << std::endl;
+        std::cerr << "Usage: runscript <script.luau>" << std::endl;
         return 1;
     }
 
