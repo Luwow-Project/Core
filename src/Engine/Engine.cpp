@@ -61,6 +61,7 @@ void Engine::initialize() {
 
     luaL_openlibs(mainState);
     initializeRequire();
+    currentState = lua_newthread(mainState);
 }
 
 static int static_require(lua_State* L) {
@@ -81,7 +82,7 @@ void Engine::initializeRequire() {
 }
 
 int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode) {
-    lua_State* T = lua_newthread(L);
+    lua_State* T = currentState;
     luaL_sandboxthread(T);
 
     int result = luau_load(T, chunkName.c_str(), bytecode.data(), bytecode.size(), 0);

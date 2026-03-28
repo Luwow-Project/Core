@@ -1,6 +1,7 @@
 #include "Package.h"
 #include <fstream>
 #include <iostream>
+#include <cstdint>
 
 namespace Luwow::Engine {
 

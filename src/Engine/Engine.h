@@ -37,8 +37,11 @@ public:
     void run();
 
     lua_State* getMainState() { return mainState; };
+    lua_State* getCurrentState() { return currentState; };
 private:
     lua_State* mainState;
+    lua_State* currentState;
+
     bool usesCompiler;
     CompilerCallbackType compilerCallback;
     bool usesDebuggerNewLuauCallback;
