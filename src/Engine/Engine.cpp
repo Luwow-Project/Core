@@ -53,7 +53,7 @@ void Engine::setMessagePumpCallback(MessagePumpCallbackType callback) {
     messagePumpCallback = callback;
 }
 
-void Engine::initialize() {
+void Engine::initialize(int argc, char* argv[]) {
     mainState = luaL_newstate();
     if (!mainState) {
         throw std::runtime_error("Failed to create Lua state");
@@ -61,6 +61,8 @@ void Engine::initialize() {
 
     luaL_openlibs(mainState);
     initializeRequire();
+    initializeGlobalArgs(argc, argv);
+    luaL_sandbox(mainState);
 }
 
 static int static_require(lua_State* L) {
@@ -77,7 +79,15 @@ void Engine::initializeRequire() {
     lua_pushlightuserdata(mainState, this);
     lua_pushcclosure(mainState, static_require, "require", EngineTag);
     lua_setglobal(mainState, "require");
-    luaL_sandbox(mainState);
+}
+
+void Engine::initializeGlobalArgs(int argc, char* argv[]) {
+    lua_newtable(mainState);
+    for (int i = 2; i < argc; ++i) {
+        lua_pushstring(mainState, argv[i]);
+        lua_rawseti(mainState, -2, i - 1);
+    }
+    lua_setglobal(mainState, "GlobalArgs");
 }
 
 int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode) {
@@ -165,12 +175,14 @@ int Engine::require(lua_State* L, const std::string& moduleName) {
         return 0;
     }
 
-    // If we have a Luau compiler and are given a valid script path, use the compiler.
-    std::filesystem::path modulePath = filePath.parent_path() / moduleName;
-    if (std::filesystem::exists(modulePath) && usesCompiler) {
-        std::string bytecode;
-        compilerCallback(modulePath, bytecode);
-        return loadModuleFromBytecode(L, moduleName, bytecode);
+    if (usesCompiler) {
+        // If we have a Luau compiler and are given a valid script path, use the compiler.
+        std::filesystem::path modulePath = filePath.parent_path() / moduleName;
+        if (std::filesystem::exists(modulePath) && usesCompiler) {
+            std::string bytecode;
+            compilerCallback(modulePath, bytecode);
+            return loadModuleFromBytecode(L, moduleName, bytecode);
+        }
     }
 
     // We couldn't find the module in the cache, package, internal modules, DLL, or source script.

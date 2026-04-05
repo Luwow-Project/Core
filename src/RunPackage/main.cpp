@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
     // Put your own binary modules here and DLLs here
 
     Engine engine(package, packagePath);
-    engine.initialize();
+    engine.initialize(argc, argv);
     engine.run();
 
     return 0;

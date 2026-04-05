@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
 
     Engine engine((Package()), std::filesystem::path(argv[1]));
     engine.setCompilerCallback(compilerCallback);
-    engine.initialize();
+    engine.initialize(argc, argv);
     engine.run();
 
     return 0;

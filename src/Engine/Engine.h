@@ -29,8 +29,10 @@ public:
     void setMessagePumpCallback(MessagePumpCallbackType callback);
 
     // Initializes the Luau State with built-ins
-    void initialize();
+    void initialize(int argc, char* argv[]);
     void initializeRequire();
+    void initializeGlobalArgs(int argc, char* argv[]);
+
     int require(lua_State* L, const std::string& moduleName);
     int loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode);
     int executeModule(lua_State* L, const std::string& moduleName, const std::string& bytecode);
