@@ -3,11 +3,59 @@
 #include "lualib.h"
 #include "Package.h"
 #include "ILuauModule.h"
+#include "RequireResolver.h"
+#include "FileUtils.h"
+
 #include <cstring>
 #include <iostream>
 #include <fstream>
 
 namespace Luwow::Engine {
+
+static int static_require(lua_State* L) {
+    std::string moduleName = luaL_checkstring(L, 1);
+    Engine* engine = static_cast<Engine*>(lua_touserdata(L, lua_upvalueindex(EngineTag)));
+    if (!engine) {
+        luaL_error(L, "Internal error: Engine not found");
+        return 0;
+    }
+    return engine->require(L, moduleName);
+}
+
+static std::pair<bool, std::string> getWithRequireByStringSemantics(std::string filePath) {
+    std::string normalized = normalizePath(std::move(filePath));
+
+    std::string rootOfPath;
+    std::string restOfPath = normalized;
+    
+    if (size_t firstSlash = normalized.find_first_of("\\/"); firstSlash != std::string::npos) {
+        rootOfPath = normalized.substr(0, firstSlash);
+        restOfPath = normalized.substr(firstSlash + 1);
+    }
+
+    std::optional<Luwow::Engine::RequireResolver> mp = Luwow::Engine::RequireResolver::create(std::move(rootOfPath), std::move(restOfPath), isFile, isDirectory);
+    if (!mp) return {false, "Could not initialize ModulePath instance."};
+
+    ResolvedRealPath resolved = mp->getRealPath();
+    std::pair<bool, std::string> result;
+
+    switch (resolved.status) {
+        case NavigationStatus::Success:
+            if (resolved.type == ResolvedRealPath::PathType::File)
+                result = {true, resolved.realPath};
+            else
+                result = {false, "Path is a directory, not a file."};
+            break;
+        case NavigationStatus::Ambiguous:
+            result = {false, "Unable to tell whether path is a file or directory. Is there a same-named file or directory?"};
+            break;
+        case NavigationStatus::NotFound:
+            result = {false, "File or directory not found."};
+            break;
+    }
+
+    return result;
+};
 
 static std::unordered_map<std::string, std::shared_ptr<ILuauModule>> globalModules;
 
@@ -65,16 +113,6 @@ void Engine::initialize(int argc, char* argv[]) {
     luaL_sandbox(mainState);
 }
 
-static int static_require(lua_State* L) {
-    std::string moduleName = luaL_checkstring(L, 1);
-    Engine* engine = static_cast<Engine*>(lua_touserdata(L, lua_upvalueindex(EngineTag)));
-    if (!engine) {
-        luaL_error(L, "Internal error: Engine not found");
-        return 0;
-    }
-    return engine->require(L, moduleName);
-}
-
 void Engine::initializeRequire() {
     lua_pushlightuserdata(mainState, this);
     lua_pushcclosure(mainState, static_require, "require", EngineTag);
@@ -90,7 +128,7 @@ void Engine::initializeGlobalArgs(int argc, char* argv[]) {
     lua_setglobal(mainState, "GlobalArgs");
 }
 
-int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode) {
+int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef) {
     lua_State* T = lua_newthread(mainState);
     luaL_sandboxthread(T);
 
@@ -112,23 +150,32 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
         return 0;
     }
 
-    lua_pop(L, 1);
+    if (saveRef) {
+        lua_xmove(T, L, 1);
+    }
+
     return 1;
 }
 
-int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode) {
-    int status = executeModule(L, moduleName, bytecode);
+int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef) {
+    int status = executeModule(L, moduleName, bytecode, saveRef);
     if (!status) return 0;
 
-    luauModuleRefs[moduleName] = lua_ref(L, -1);
+    if (saveRef) {
+        luauModuleRefs[moduleName] = lua_ref(L, -1);
+        lua_remove(L, 1);
+    } else {
+        lua_pop(L, 1);
+    }
+
     return 1;
 }
 
 int Engine::require(lua_State* L, const std::string& moduleName) {
-    // TODO: Make this conformant to the require library
+    std::pair<bool, std::string> testResult = getWithRequireByStringSemantics(moduleName);
 
     // Check if the module is already loaded
-    auto moduleRef = luauModuleRefs.find(moduleName);
+    auto moduleRef = luauModuleRefs.find(testResult.second);
     if (moduleRef != luauModuleRefs.end()) {
         lua_rawgeti(L, LUA_REGISTRYINDEX, moduleRef->second);
         return 1;
@@ -158,10 +205,10 @@ int Engine::require(lua_State* L, const std::string& moduleName) {
     }
 
     // Is the module in the package?
-    int index = package.indexOfFile(moduleName);
+    int index = package.indexOfFile(testResult.second);
     if (index != -1) {
         std::string bytecode = package.getFileContent(index);
-        return loadModuleFromBytecode(L, moduleName, bytecode);
+        return loadModuleFromBytecode(L, testResult.second, bytecode, true);
     }
 
     // Can we find a DLL with the module name?
@@ -177,11 +224,11 @@ int Engine::require(lua_State* L, const std::string& moduleName) {
 
     if (usesCompiler) {
         // If we have a Luau compiler and are given a valid script path, use the compiler.
-        std::filesystem::path modulePath = filePath.parent_path() / moduleName;
+        std::filesystem::path modulePath = std::filesystem::path(testResult.second);
         if (std::filesystem::exists(modulePath) && usesCompiler) {
             std::string bytecode;
             compilerCallback(modulePath, bytecode);
-            return loadModuleFromBytecode(L, moduleName, bytecode);
+            return loadModuleFromBytecode(L, testResult.second, bytecode, true);
         }
     }
 
@@ -209,7 +256,7 @@ void Engine::run() {
             chunkName = package.getFileName(0).c_str(); // TODO: Update this to better point at a main module.
         }
 
-        int status = executeModule(mainState, chunkName, bytecode);
+        int status = loadModuleFromBytecode(mainState, chunkName, bytecode, false);
         if (!status) throw std::runtime_error("Could not execute module: " + chunkName);
 
         if (usesMessagePump) {

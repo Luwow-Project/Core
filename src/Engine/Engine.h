@@ -34,8 +34,8 @@ public:
     void initializeGlobalArgs(int argc, char* argv[]);
 
     int require(lua_State* L, const std::string& moduleName);
-    int loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode);
-    int executeModule(lua_State* L, const std::string& moduleName, const std::string& bytecode);
+    int loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef);
+    int executeModule(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef);
     void run();
 
     lua_State* getMainState() { return mainState; };

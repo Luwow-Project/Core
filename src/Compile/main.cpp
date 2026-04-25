@@ -1,5 +1,12 @@
-#include <iostream>
 #include "LuauCompiler.h"
+#include <iostream>
+
+void replaceCharacters(std::string& scriptPath) {
+    for (char& c : scriptPath) {
+        if (c == '\\')
+            c = '/';
+    }
+}
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -14,6 +21,7 @@ int main(int argc, char* argv[]) {
     // and append them into the package in the order specified on the command line.
     for (int i = 1; i < argc - 1; i++) {
         std::string scriptPath = argv[i];
+        replaceCharacters(scriptPath);
         if (!compiler.compileScript(scriptPath)) {
             std::cerr << "Failed to compile script: " << scriptPath << std::endl;
             return 1;
