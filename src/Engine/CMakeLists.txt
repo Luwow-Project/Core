@@ -7,8 +7,6 @@ target_sources(Luwow.Engine PRIVATE
     Engine.h
     Package.cpp
     Package.h
-    FileUtils.cpp
-    FileUtils.h
-    RequireResolver.cpp
-    RequireResolver.h
+    Require.cpp
+    Require.h
 )

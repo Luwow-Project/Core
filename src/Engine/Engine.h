@@ -33,7 +33,16 @@ public:
     void initializeRequire();
     void initializeGlobalArgs(int argc, char* argv[]);
 
-    int require(lua_State* L, const std::string& moduleName);
+    bool usesPackage() { return (!usesCompiler && package.getFileCount() > 0); };
+
+    std::string getModuleName(const std::string key);
+
+    int getModuleRef(lua_State* L, const std::string path);
+    int setModuleRef(lua_State* L, const std::string path);
+    int isInPackage(lua_State* L, const std::string path);
+
+    int compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath);
+
     int loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef);
     int executeModule(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef);
     void run();

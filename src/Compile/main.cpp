@@ -1,7 +1,7 @@
 #include "LuauCompiler.h"
 #include <iostream>
 
-void replaceCharacters(std::string& scriptPath) {
+static void replaceCharacters(std::string& scriptPath) {
     for (char& c : scriptPath) {
         if (c == '\\')
             c = '/';

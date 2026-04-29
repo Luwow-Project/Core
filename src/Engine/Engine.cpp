@@ -1,61 +1,16 @@
+#include "ILuauModule.h"
+#include "Package.h"
+#include "Require.h"
 #include "Engine.h"
+
 #include "lua.h"
 #include "lualib.h"
-#include "Package.h"
-#include "ILuauModule.h"
-#include "RequireResolver.h"
-#include "FileUtils.h"
 
 #include <cstring>
 #include <iostream>
 #include <fstream>
 
 namespace Luwow::Engine {
-
-static int static_require(lua_State* L) {
-    std::string moduleName = luaL_checkstring(L, 1);
-    Engine* engine = static_cast<Engine*>(lua_touserdata(L, lua_upvalueindex(EngineTag)));
-    if (!engine) {
-        luaL_error(L, "Internal error: Engine not found");
-        return 0;
-    }
-    return engine->require(L, moduleName);
-}
-
-static std::pair<bool, std::string> getWithRequireByStringSemantics(std::string filePath) {
-    std::string normalized = normalizePath(std::move(filePath));
-
-    std::string rootOfPath;
-    std::string restOfPath = normalized;
-    
-    if (size_t firstSlash = normalized.find_first_of("\\/"); firstSlash != std::string::npos) {
-        rootOfPath = normalized.substr(0, firstSlash);
-        restOfPath = normalized.substr(firstSlash + 1);
-    }
-
-    std::optional<Luwow::Engine::RequireResolver> mp = Luwow::Engine::RequireResolver::create(std::move(rootOfPath), std::move(restOfPath), isFile, isDirectory);
-    if (!mp) return {false, "Could not initialize ModulePath instance."};
-
-    ResolvedRealPath resolved = mp->getRealPath();
-    std::pair<bool, std::string> result;
-
-    switch (resolved.status) {
-        case NavigationStatus::Success:
-            if (resolved.type == ResolvedRealPath::PathType::File)
-                result = {true, resolved.realPath};
-            else
-                result = {false, "Path is a directory, not a file."};
-            break;
-        case NavigationStatus::Ambiguous:
-            result = {false, "Unable to tell whether path is a file or directory. Is there a same-named file or directory?"};
-            break;
-        case NavigationStatus::NotFound:
-            result = {false, "File or directory not found."};
-            break;
-    }
-
-    return result;
-};
 
 static std::unordered_map<std::string, std::shared_ptr<ILuauModule>> globalModules;
 
@@ -113,6 +68,23 @@ void Engine::initialize(int argc, char* argv[]) {
     luaL_sandbox(mainState);
 }
 
+static void replaceCharacters(std::string& path) {
+    for (char& c : path) {
+        if (c == '\\')
+            c = '/';
+    }
+}
+
+static int static_require(lua_State* L) {
+    std::string path = luaL_checkstring(L, 1);
+    Engine* engine = static_cast<Engine*>(lua_touserdata(L, lua_upvalueindex(EngineTag)));
+    if (!engine) {
+        luaL_error(L, "Internal error: Engine not found");
+        return 0;
+    }
+    return luaRequire(engine, L, path);
+}
+
 void Engine::initializeRequire() {
     lua_pushlightuserdata(mainState, this);
     lua_pushcclosure(mainState, static_require, "require", EngineTag);
@@ -131,6 +103,8 @@ void Engine::initializeGlobalArgs(int argc, char* argv[]) {
 int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef) {
     lua_State* T = lua_newthread(mainState);
     luaL_sandboxthread(T);
+
+    int br = lua_gettop(T);
 
     int result = luau_load(T, chunkName.c_str(), bytecode.data(), bytecode.size(), 0);
     if (result != 0) {
@@ -151,6 +125,10 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
     }
 
     if (saveRef) {
+        if ((lua_gettop(T) - br) == 0) {
+            luaL_error(L, "%s didn't return exactly one value", chunkName.c_str());
+            return 0;
+        }
         lua_xmove(T, L, 1);
     }
 
@@ -171,24 +149,28 @@ int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, 
     return 1;
 }
 
-int Engine::require(lua_State* L, const std::string& moduleName) {
-    std::pair<bool, std::string> testResult = getWithRequireByStringSemantics(moduleName);
+std::string Engine::getModuleName(const std::string key) {
+    auto module = globalModules.find(key);
+    return (module == globalModules.end()) ? std::string() : std::string(module->second->getModuleName());
+}
 
-    // Check if the module is already loaded
-    auto moduleRef = luauModuleRefs.find(testResult.second);
+int Engine::getModuleRef(lua_State* L, const std::string path) {
+    auto moduleRef = luauModuleRefs.find(path);
     if (moduleRef != luauModuleRefs.end()) {
         lua_rawgeti(L, LUA_REGISTRYINDEX, moduleRef->second);
         return 1;
     }
+    return 0;
+}
 
-    // Is the module in internal modules?
-    auto module = globalModules.find(moduleName);
+int Engine::setModuleRef(lua_State* L, const std::string path) {
+    auto module = globalModules.find(path);
     if (module != globalModules.end()) {
         // We initialize the module here on first require so that modules can have
         // access to the engine - some module implementations might need special
         // handling like preventing the runtime from exiting.
         ILuauModule* initializedModule = module->second->initialize(this);
-        modules[moduleName] = std::shared_ptr<ILuauModule>(initializedModule);
+        modules[path] = std::shared_ptr<ILuauModule>(initializedModule);
 
         const LuauExport* exports = initializedModule->getExports();
         lua_createtable(L, 0, sizeof(exports) / sizeof(exports[0]));
@@ -200,40 +182,28 @@ int Engine::require(lua_State* L, const std::string& moduleName) {
             lua_setfield(L, -2, exports[i].name);
         }
         lua_setreadonly(L, -1, 1);
-        luauModuleRefs[moduleName] = lua_ref(L, -1);
+        luauModuleRefs[path] = lua_ref(L, -1);
         return 1;
     }
+    return 0;
+}
 
-    // Is the module in the package?
-    int index = package.indexOfFile(testResult.second);
+int Engine::isInPackage(lua_State* L, const std::string path) {
+    int index = package.indexOfFile(path);
     if (index != -1) {
         std::string bytecode = package.getFileContent(index);
-        return loadModuleFromBytecode(L, testResult.second, bytecode, true);
+        return loadModuleFromBytecode(L, path, bytecode, true);
     }
+    return 0;
+}
 
-    // Can we find a DLL with the module name?
-    std::string dllName = moduleName + ".dll";
-    std::filesystem::path dllPath = filePath.parent_path() / dllName;
-
-    // TODO: Implement DLL loading per OS platform
-    // HMODULE dllHandle = LoadLibraryA(dllPath.string().c_str());
-    if (std::filesystem::exists(dllPath)) {
-        luaL_error(L, "DLL loading not yet implemented");
-        return 0;
+int Engine::compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath) {
+    if (!usesCompiler) return 0;
+    if (std::filesystem::exists(path) && usesCompiler) {
+        std::string bytecode;
+        compilerCallback(path, bytecode);
+        return loadModuleFromBytecode(L, formattedPath, bytecode, true);
     }
-
-    if (usesCompiler) {
-        // If we have a Luau compiler and are given a valid script path, use the compiler.
-        std::filesystem::path modulePath = std::filesystem::path(testResult.second);
-        if (std::filesystem::exists(modulePath) && usesCompiler) {
-            std::string bytecode;
-            compilerCallback(modulePath, bytecode);
-            return loadModuleFromBytecode(L, testResult.second, bytecode, true);
-        }
-    }
-
-    // We couldn't find the module in the cache, package, internal modules, DLL, or source script.
-    luaL_error(L, "Module not found: %s", moduleName.c_str());
     return 0;
 }
 
@@ -253,8 +223,10 @@ void Engine::run() {
             }
 
             bytecode = package.getFileContent(0);
-            chunkName = package.getFileName(0).c_str(); // TODO: Update this to better point at a main module.
+            chunkName = package.getFileName(0).c_str();
         }
+
+        replaceCharacters(chunkName);
 
         int status = loadModuleFromBytecode(mainState, chunkName, bytecode, false);
         if (!status) throw std::runtime_error("Could not execute module: " + chunkName);

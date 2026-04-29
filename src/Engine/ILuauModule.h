@@ -1,6 +1,6 @@
 #pragma once
 
-// Forward declare Lua state
+// Forward declared Lua state
 struct lua_State;
 
 // Type definition for Luau function exports
