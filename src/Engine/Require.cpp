@@ -61,7 +61,7 @@ namespace Luwow::Engine {
             if (!lua_getinfo(L, level, "s", &ar)) break;
             if (!ar.source) continue;
 
-            std::string source = stripExtension(ar.source);
+            std::string source = formatPath(ctx.root, stripExtension(ar.source));
         
             // selfDir = directory portion of the key
             size_t lastSlash = source.rfind('/');
