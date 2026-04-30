@@ -5,7 +5,6 @@ target_include_directories(Luwow.RunPackage PRIVATE
 )
 target_link_libraries(Luwow.RunPackage PRIVATE
     Luwow.Engine
-    Luau.Compiler
 )
 set_target_properties(Luwow.RunPackage PROPERTIES OUTPUT_NAME runpackage)
 target_sources(Luwow.RunPackage PRIVATE
