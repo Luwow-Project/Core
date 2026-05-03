@@ -9,4 +9,6 @@ target_sources(Luwow.Engine PRIVATE
     Package.h
     Require.cpp
     Require.h
+    Config.cpp
+    Config.h
 )

@@ -29,7 +29,7 @@ void compilerCallback(const std::filesystem::path& modulePath, std::string& resu
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: runscript <script.luau>" << std::endl;
+        std::cerr << "Usage: runscript <script.luau> <config.luau>" << std::endl;
         return 1;
     }
 
@@ -38,6 +38,7 @@ int main(int argc, char* argv[]) {
     Engine engine((Package()), std::filesystem::path(argv[1]));
     engine.setCompilerCallback(compilerCallback);
     engine.initialize(argc, argv);
+    if (argv[2]) engine.setConfigPath(argv[2]);
     engine.run();
 
     return 0;

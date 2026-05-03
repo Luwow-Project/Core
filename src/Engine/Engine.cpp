@@ -100,12 +100,11 @@ void Engine::initializeGlobalArgs(int argc, char* argv[]) {
     lua_setglobal(mainState, "GlobalArgs");
 }
 
-int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef) {
-    lua_State* T = lua_newthread(mainState);
+int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState) {
+    lua_State* T = (useGivenState) ? lua_newthread(L) : lua_newthread(mainState);
     luaL_sandboxthread(T);
 
-    int br = lua_gettop(T);
-
+    int topres = lua_gettop(T);
     int result = luau_load(T, chunkName.c_str(), bytecode.data(), bytecode.size(), 0);
     if (result != 0) {
         luaL_error(L, "Failed to load bytecode for module: %s", lua_tostring(L, -1));
@@ -125,7 +124,7 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
     }
 
     if (saveRef) {
-        if ((lua_gettop(T) - br) == 0) {
+        if ((lua_gettop(T) - topres) == 0) {
             luaL_error(L, "%s didn't return exactly one value", chunkName.c_str());
             return 0;
         }
@@ -135,8 +134,8 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
     return 1;
 }
 
-int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef) {
-    int status = executeModule(L, moduleName, bytecode, saveRef);
+int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef, bool useGivenState) {
+    int status = executeModule(L, moduleName, bytecode, saveRef, useGivenState);
     if (!status) return 0;
 
     if (saveRef) {
@@ -192,17 +191,17 @@ int Engine::isInPackage(lua_State* L, const std::string path) {
     int index = package.indexOfFile(path);
     if (index != -1) {
         std::string bytecode = package.getFileContent(index);
-        return loadModuleFromBytecode(L, path, bytecode, true);
+        return loadModuleFromBytecode(L, path, bytecode, true, false);
     }
     return 0;
 }
 
-int Engine::compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath) {
+int Engine::compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath, bool useGivenState) {
     if (!usesCompiler) return 0;
     if (std::filesystem::exists(path) && usesCompiler) {
         std::string bytecode;
         compilerCallback(path, bytecode);
-        return loadModuleFromBytecode(L, formattedPath, bytecode, true);
+        return loadModuleFromBytecode(L, formattedPath, bytecode, true, useGivenState);
     }
     return 0;
 }
@@ -228,7 +227,7 @@ void Engine::run() {
 
         replaceCharacters(chunkName);
 
-        int status = loadModuleFromBytecode(mainState, chunkName, bytecode, false);
+        int status = loadModuleFromBytecode(mainState, chunkName, bytecode, false, false);
         if (!status) throw std::runtime_error("Could not execute module: " + chunkName);
 
         if (usesMessagePump) {

@@ -1,5 +1,6 @@
 #include "Require.h"
 #include "Engine.h"
+#include "Config.h"
 
 #include "lualib.h"
 #include "lua.h"
@@ -121,6 +122,22 @@ namespace Luwow::Engine {
             // Strip trailing slashes (e.g. "@self/" produces empty modulePath)
             while (!modulePath.empty() && modulePath.back() == '/') modulePath.pop_back();
 
+            auto optval = getConfig(engine, L, ctx.root); // Could we just cache this on engine run?
+            if (optval.has_value()) {
+                auto cfg = optval.value();
+                auto it = cfg->aliases.find(alias);
+                if (it != cfg->aliases.end()) {
+                    // Explicit config alias - always wins
+                    fs::path resolvedPath = fs::weakly_canonical(fs::path(it->second.qualified) / fs::path(modulePath));
+                    std::string newPath = addExtension(resolvedPath.generic_string());
+                    std::string formattedPath = formatPath(ctx.root, newPath);
+                    
+                    if (!engine->usesPackage()) {
+                        return LocatedModule { .path = newPath, .formattedPath = formattedPath, .type = LocatedModule::TYPE_FILE };
+                    }
+                }
+            }
+
             // Check for Luwow internal module aliases first.
             if (alias == CHUNK_PREFIX_LUWOW) {
                 auto module = resolveInternal(engine, modulePath);
@@ -204,7 +221,7 @@ namespace Luwow::Engine {
                     nret = engine->getModuleRef(L, formattedPath);
                     if (nret > 0) break;
 
-                    nret = engine->compileAndExecute(L, resolved->path, formattedPath);
+                    nret = engine->compileAndExecute(L, resolved->path, formattedPath, false);
                     chunkName = formattedPath;
                 }
                 break;

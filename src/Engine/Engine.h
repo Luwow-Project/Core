@@ -32,6 +32,7 @@ public:
     void initialize(int argc, char* argv[]);
     void initializeRequire();
     void initializeGlobalArgs(int argc, char* argv[]);
+    void setConfigPath(char* path) { configPath = std::filesystem::path(path); };
 
     bool usesPackage() { return (!usesCompiler && package.getFileCount() > 0); };
 
@@ -41,12 +42,13 @@ public:
     int setModuleRef(lua_State* L, const std::string path);
     int isInPackage(lua_State* L, const std::string path);
 
-    int compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath);
+    int compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath, bool useGivenState);
 
-    int loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef);
-    int executeModule(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef);
+    int loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef, bool useGivenState);
+    int executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState);
     void run();
 
+    std::filesystem::path getConfigPath() { return configPath; };
     lua_State* getMainState() { return mainState; };
 private:
     lua_State* mainState;
@@ -57,6 +59,7 @@ private:
     DebuggerNewLuauCallbackType debuggerNewLuauCallback;
     Package package;
     std::filesystem::path filePath;
+    std::filesystem::path configPath;
     bool usesMessagePump;
     MessagePumpCallbackType messagePumpCallback;
     // DLLs and internal modules
