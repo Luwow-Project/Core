@@ -14,7 +14,7 @@ namespace Luwow::Engine {
 
 static std::unordered_map<std::string, std::shared_ptr<ILuauModule>> globalModules;
 
-/*static*/ void Engine::registerInternalModule(std::shared_ptr<ILuauModule> module) {
+/*static*/ void Engine::registerNativeModule(std::shared_ptr<ILuauModule> module) {
     globalModules[module->getModuleName()] = module;
 }
 
@@ -68,7 +68,7 @@ void Engine::initialize(int argc, char* argv[]) {
     luaL_sandbox(mainState);
 }
 
-static void replaceCharacters(std::string& path) {
+static void formatPath(std::string& path) {
     for (char& c : path) {
         if (c == '\\')
             c = '/';
@@ -187,11 +187,11 @@ int Engine::setModuleRef(lua_State* L, const std::string path) {
     return 0;
 }
 
-int Engine::isInPackage(lua_State* L, const std::string path) {
+int Engine::isInPackage(lua_State* L, const std::string path, bool useGivenState) {
     int index = package.indexOfFile(path);
     if (index != -1) {
         std::string bytecode = package.getFileContent(index);
-        return loadModuleFromBytecode(L, path, bytecode, true, false);
+        return loadModuleFromBytecode(L, path, bytecode, true, useGivenState);
     }
     return 0;
 }
@@ -225,7 +225,7 @@ void Engine::run() {
             chunkName = package.getFileName(0).c_str();
         }
 
-        replaceCharacters(chunkName);
+        formatPath(chunkName);
 
         int status = loadModuleFromBytecode(mainState, chunkName, bytecode, false, false);
         if (!status) throw std::runtime_error("Could not execute module: " + chunkName);

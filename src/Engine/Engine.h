@@ -10,6 +10,9 @@
 
 namespace Luwow::Engine {
 
+// Forward declared config struct
+struct Config;
+
 // Tag for the Engine object in the Luau userdata
 #define EngineTag 1
 typedef void (*CompilerCallbackType)(const std::filesystem::path& modulePath, std::string& resultingBytecode);
@@ -21,8 +24,8 @@ public:
     Engine(Package context, std::filesystem::path filePath);
     ~Engine();
 
-    // Statically registered internal binary modules, independent of Luau state or Engine.
-    static void registerInternalModule(std::shared_ptr<ILuauModule> module);
+    // Statically registered native binary modules, independent of Luau state or Engine.
+    static void registerNativeModule(std::shared_ptr<ILuauModule> module);
 
     void setCompilerCallback(CompilerCallbackType callback);
     void setDebuggerNewLuauCallback(DebuggerNewLuauCallbackType callback);
@@ -33,6 +36,8 @@ public:
     void initializeRequire();
     void initializeGlobalArgs(int argc, char* argv[]);
     void setConfigPath(char* path) { configPath = std::filesystem::path(path); };
+    void setConfigPath(std::filesystem::path path) { configPath = path; }; 
+    void setConfig(Config* configRef) { config = configRef; };
 
     bool usesPackage() { return (!usesCompiler && package.getFileCount() > 0); };
 
@@ -40,18 +45,19 @@ public:
 
     int getModuleRef(lua_State* L, const std::string path);
     int setModuleRef(lua_State* L, const std::string path);
-    int isInPackage(lua_State* L, const std::string path);
+    int isInPackage(lua_State* L, const std::string path, bool useGivenState);
 
     int compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath, bool useGivenState);
-
     int loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef, bool useGivenState);
     int executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState);
     void run();
 
     std::filesystem::path getConfigPath() { return configPath; };
     lua_State* getMainState() { return mainState; };
+    Config* getConfig() { return config; };
 private:
     lua_State* mainState;
+    Config* config = nullptr;
 
     bool usesCompiler;
     CompilerCallbackType compilerCallback;

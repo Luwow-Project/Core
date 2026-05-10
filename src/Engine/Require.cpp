@@ -86,7 +86,7 @@ namespace Luwow::Engine {
     static std::optional<LocatedModule> resolveInternal(Engine* engine, std::string key) {
         std::string moduleName = engine->getModuleName(key);
         if (moduleName.empty()) return std::nullopt;
-        return LocatedModule { .path = moduleName, .type = LocatedModule::TYPE_INTERNAL_MODULE};
+        return LocatedModule { .path = moduleName, .type = LocatedModule::TYPE_NATIVE_MODULE };
     }
 
     static std::string resolvePath(lua_State* L, RequireContext& ctx, const std::string path) {
@@ -106,6 +106,10 @@ namespace Luwow::Engine {
     }
 
     std::optional<LocatedModule> resolveModule(Engine* engine, lua_State* L, RequireContext& ctx, const std::string path) {
+        fs::path resolvedPath = "";
+        std::string newPath = "";
+        std::string formattedPath = "";
+
         // Alias Resolution
         if (path[0] == '@') {
             std::string alias, modulePath;
@@ -122,19 +126,15 @@ namespace Luwow::Engine {
             // Strip trailing slashes (e.g. "@self/" produces empty modulePath)
             while (!modulePath.empty() && modulePath.back() == '/') modulePath.pop_back();
 
-            auto optval = getConfig(engine, L, ctx.root); // Could we just cache this on engine run?
+            auto optval = getConfig(engine, L, ctx.root);
             if (optval.has_value()) {
                 auto cfg = optval.value();
                 auto it = cfg->aliases.find(alias);
                 if (it != cfg->aliases.end()) {
                     // Explicit config alias - always wins
-                    fs::path resolvedPath = fs::weakly_canonical(fs::path(it->second.qualified) / fs::path(modulePath));
-                    std::string newPath = addExtension(resolvedPath.generic_string());
-                    std::string formattedPath = formatPath(ctx.root, newPath);
-                    
-                    if (!engine->usesPackage()) {
-                        return LocatedModule { .path = newPath, .formattedPath = formattedPath, .type = LocatedModule::TYPE_FILE };
-                    }
+                    resolvedPath = fs::weakly_canonical(fs::path(it->second.qualified) / fs::path(modulePath));
+                    newPath = resolvePath(L, ctx, resolvedPath.generic_string());
+                    formattedPath = formatPath(ctx.root, newPath);
                 }
             }
 
@@ -145,37 +145,39 @@ namespace Luwow::Engine {
                     return module;
                 }
             } else if (alias == "self") {
-                fs::path resolvedPath = fs::weakly_canonical(ctx.selfDir / fs::path(modulePath));
-                std::string newPath = addExtension(resolvedPath.generic_string());
-                std::string formattedPath = formatPath(ctx.root, newPath);
+                resolvedPath = fs::weakly_canonical(ctx.selfDir / fs::path(modulePath));
+                newPath = addExtension(resolvedPath.generic_string());
+                formattedPath = formatPath(ctx.root, newPath);
+            }
 
-                if (engine->usesPackage()) {
-                    return LocatedModule { .path = formattedPath, .type = LocatedModule::TYPE_PACKAGE };
-                } else {
-                    return LocatedModule { .path = newPath, .formattedPath = formattedPath, .type = LocatedModule::TYPE_FILE };
-                }
-            } else {
+            if (resolvedPath.empty()) {
                 luaL_error(L, "Require %s used undefined alias '@%s'", path.c_str(), alias.c_str());
+                return std::nullopt;
+            }
+
+            if (engine->usesPackage()) {
+                return LocatedModule { .formattedPath = formattedPath, .type = LocatedModule::TYPE_PACKAGE };
+            } else {
+                return LocatedModule { .path = newPath, .formattedPath = formattedPath, .type = LocatedModule::TYPE_FILE };
             }
         } else if (!(path.starts_with("./") || path.starts_with("../"))) {
             luaL_error(L, "Require path must always start with @, ./ or ../");
         } else {
             // Try packages and files
             if (!ctx.callerDir.empty()) {
-                std::string newPath = resolvePath(L, ctx, path);
-                std::string formattedPath = formatPath(ctx.root, newPath);
-
-                if (engine->usesPackage()) {
-                    return LocatedModule { .path = formattedPath, .type = LocatedModule::TYPE_PACKAGE };
-                } else {
-                    return LocatedModule { .path = newPath, .formattedPath = formattedPath, .type = LocatedModule::TYPE_FILE };
-                }
+                newPath = resolvePath(L, ctx, path);
+                formattedPath = formatPath(ctx.root, newPath);
+            } else {
+                luaL_error(L, "Module %s not found", path.c_str());
+                return std::nullopt;
             }
-            
-            luaL_error(L, "Module %s not found", path.c_str());
         }
 
-        return std::nullopt;
+        if (engine->usesPackage()) {
+            return LocatedModule { .formattedPath = formattedPath, .type = LocatedModule::TYPE_PACKAGE };
+        } else {
+            return LocatedModule { .path = newPath, .formattedPath = formattedPath, .type = LocatedModule::TYPE_FILE };
+        }
     }
 
     std::optional<LocatedModule> resolveModule(Engine* engine, lua_State* L, const std::string path) {
@@ -227,7 +229,7 @@ namespace Luwow::Engine {
                 break;
             }
 
-            case LocatedModule::TYPE_INTERNAL_MODULE: {
+            case LocatedModule::TYPE_NATIVE_MODULE: {
                 chunkName = CHUNK_PREFIX_LUWOW + formattedPath;
                 return engine->setModuleRef(L, formattedPath);
             }
@@ -236,7 +238,7 @@ namespace Luwow::Engine {
                 chunkName = formattedPath;
                 nret = engine->getModuleRef(L, formattedPath);
                 if (nret > 0) break;
-                nret = engine->isInPackage(L, formattedPath);
+                nret = engine->isInPackage(L, formattedPath, false);
                 break;
             }
 

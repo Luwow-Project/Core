@@ -14,7 +14,7 @@ namespace Luwow::Engine {
         enum {
             TYPE_FILE,
             TYPE_PACKAGE,
-            TYPE_INTERNAL_MODULE
+            TYPE_NATIVE_MODULE
         } type;
     };
 

@@ -198,15 +198,16 @@ namespace Luwow::Engine {
     }
     // #endregion
 
-    static void runLuauConfig(Engine* engine, lua_State* L, fs::path path, std::string source, std::string root, fs::path directory, Luau::Config& cfg) {
+    static void runLuauConfig(Engine* engine, lua_State* L, fs::path path, std::string root, fs::path directory, Luau::Config& cfg) {
         int ok;
         if (!engine->usesPackage()) {
             fs::path fullPath = (fs::path(root) / path).lexically_normal();
             ok = engine->compileAndExecute(L, fullPath.generic_string(), path.generic_string(), true);
         } else {
-            // Implement for packages later.
-            return;
+            ok = engine->isInPackage(L, path.generic_string(), true);
         }
+
+        if (!ok) return;
 
         // Expect a table with an "aliases" sub-table
         if (!lua_istable(L, -1)) {
@@ -241,6 +242,9 @@ namespace Luwow::Engine {
     }
 
     std::optional<Config*> getConfig(Engine* engine, lua_State* L, std::string root) {
+        Config* cachedConfig = engine->getConfig();
+        if (cachedConfig != nullptr) return cachedConfig;
+
         auto out = new Config;
         out->found = false;
 
@@ -248,14 +252,7 @@ namespace Luwow::Engine {
         fs::path configPath = engine->getConfigPath();
         if (configPath.empty()) return std::nullopt;
 
-        std::ifstream f(configPath, std::ios::binary);
-        if (!f) {
-            luaL_error(L, "Failed to read " PATH_PRINTF, configPath.c_str());
-            return std::nullopt;
-        }
-
-        std::string contents = std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-        runLuauConfig(engine, L, configPath, contents, root, configPath.parent_path(), cfg);
+        runLuauConfig(engine, L, configPath, root, configPath.parent_path(), cfg);
 
         out->configDir = configPath.parent_path();
         out->enabledLints = cfg.enabledLint.warningMask;
@@ -279,13 +276,14 @@ namespace Luwow::Engine {
             }
 
             AliasInfo ainfo = {
-                resolved.string(),
+                engine->usesPackage() ? "./" + (fs::path(std::string(info.configLocation)) / fs::path(info.value)).lexically_normal().generic_string() : resolved.string(),
                 std::string(info.configLocation),
                 info.value,
             };
             out->aliases.insert_or_assign(key, ainfo);
         }
 
+        engine->setConfig(out);
         return out;
     }
 }

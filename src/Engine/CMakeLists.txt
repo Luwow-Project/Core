@@ -1,6 +1,6 @@
 add_library(Luwow.Engine STATIC)
 target_include_directories(Luwow.Engine PRIVATE .)
-target_link_libraries(Luwow.Engine PUBLIC Luau.VM Luau.Common)
+target_link_libraries(Luwow.Engine PUBLIC Luau.VM Luau.Common Luau.Config)
 target_sources(Luwow.Engine PRIVATE
     ILuauModule.h
     Engine.cpp
