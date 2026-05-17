@@ -20,6 +20,9 @@ public:
     
     // Get the module name
     virtual const char* getModuleName() const = 0;
+
+    // Get the module alias
+    virtual const char* getModuleAlias() const = 0;
     
     // Get the module exports
     virtual const LuauExport* getExports() const = 0;

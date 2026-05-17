@@ -12,8 +12,6 @@
 #include <string_view>
 #include <string.h>
 
-#define CHUNK_PREFIX_LUWOW "Luwow"
-
 // Checks if .luau extension exists
 static bool hasLuauExtension(std::string path) {
     return (path.size() > 5 && path.substr(path.size() - 5) == ".luau");
@@ -83,8 +81,8 @@ namespace Luwow::Engine {
         return 0;
     }
 
-    static std::optional<LocatedModule> resolveInternal(Engine* engine, std::string key) {
-        std::string moduleName = engine->getModuleName(key);
+    static std::optional<LocatedModule> resolveNative(Engine* engine, std::string alias, std::string key) {
+        std::string moduleName = engine->getModuleName(alias + "/" + key);
         if (moduleName.empty()) return std::nullopt;
         return LocatedModule { .path = moduleName, .type = LocatedModule::TYPE_NATIVE_MODULE };
     }
@@ -138,13 +136,13 @@ namespace Luwow::Engine {
                 }
             }
 
-            // Check for Luwow internal module aliases first.
-            if (alias == CHUNK_PREFIX_LUWOW) {
-                auto module = resolveInternal(engine, modulePath);
-                if (module) {
-                    return module;
-                }
-            } else if (alias == "self") {
+            // Check for native module aliases first.
+            auto module = resolveNative(engine, alias, modulePath);
+            if (module) {
+                return module;
+            }
+            
+            if (alias == "self") {
                 resolvedPath = fs::weakly_canonical(ctx.selfDir / fs::path(modulePath));
                 newPath = addExtension(resolvedPath.generic_string());
                 formattedPath = formatPath(ctx.root, newPath);
@@ -230,7 +228,7 @@ namespace Luwow::Engine {
             }
 
             case LocatedModule::TYPE_NATIVE_MODULE: {
-                chunkName = CHUNK_PREFIX_LUWOW + formattedPath;
+                chunkName = formattedPath;
                 return engine->setModuleRef(L, formattedPath);
             }
 

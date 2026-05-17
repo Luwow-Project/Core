@@ -14,8 +14,11 @@ namespace Luwow::Engine {
 
 static std::unordered_map<std::string, std::shared_ptr<ILuauModule>> globalModules;
 
-/*static*/ void Engine::registerNativeModule(std::shared_ptr<ILuauModule> module) {
-    globalModules[module->getModuleName()] = module;
+void Engine::registerNativeModule(std::shared_ptr<ILuauModule> module) {
+    const char* moduleName = module->getModuleName();
+    const char* moduleAlias = module->getModuleAlias();
+    std::string moduleKey = std::string(moduleAlias) + "/" + moduleName;
+    globalModules[moduleKey] = module;
 }
 
 Engine::Engine(Package context, std::filesystem::path filePath) :
@@ -149,8 +152,8 @@ int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, 
 }
 
 std::string Engine::getModuleName(const std::string key) {
-    auto module = globalModules.find(key);
-    return (module == globalModules.end()) ? std::string() : std::string(module->second->getModuleName());
+    auto it = globalModules.find(key);
+    return (it == globalModules.end()) ? std::string() : key;
 }
 
 int Engine::getModuleRef(lua_State* L, const std::string path) {
