@@ -216,8 +216,6 @@ namespace Luwow::Engine {
                         nret = 0;
                         break;
                     }
-
-                    // Check if the module is already loaded
                     nret = engine->getModuleRef(L, formattedPath);
                     if (nret > 0) break;
 
@@ -228,15 +226,16 @@ namespace Luwow::Engine {
             }
 
             case LocatedModule::TYPE_NATIVE_MODULE: {
+                nret = engine->getModuleRef(L, formattedPath);
                 chunkName = formattedPath;
-                return engine->setModuleRef(L, formattedPath);
+                break;
             }
 
             case LocatedModule::TYPE_PACKAGE: {
-                chunkName = formattedPath;
                 nret = engine->getModuleRef(L, formattedPath);
                 if (nret > 0) break;
                 nret = engine->isInPackage(L, formattedPath, false);
+                chunkName = formattedPath;
                 break;
             }
 

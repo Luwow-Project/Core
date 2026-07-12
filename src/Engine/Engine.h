@@ -26,6 +26,8 @@ public:
 
     // Statically registered native binary modules, independent of Luau state or Engine.
     static void registerNativeModule(std::shared_ptr<ILuauModule> module);
+    void initializeNativeModules(lua_State* L);
+    int initNativeModule(lua_State* L, const std::string path);
 
     void setCompilerCallback(CompilerCallbackType callback);
     void setDebuggerNewLuauCallback(DebuggerNewLuauCallbackType callback);
@@ -44,7 +46,6 @@ public:
     std::string getModuleName(const std::string key);
 
     int getModuleRef(lua_State* L, const std::string path);
-    int setModuleRef(lua_State* L, const std::string path);
     int isInPackage(lua_State* L, const std::string path, bool useGivenState);
 
     int compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath, bool useGivenState);

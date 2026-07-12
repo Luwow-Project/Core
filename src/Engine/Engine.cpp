@@ -14,11 +14,21 @@ namespace Luwow::Engine {
 
 static std::unordered_map<std::string, std::shared_ptr<ILuauModule>> globalModules;
 
-void Engine::registerNativeModule(std::shared_ptr<ILuauModule> module) {
-    const char* moduleName = module->getModuleName();
-    const char* moduleAlias = module->getModuleAlias();
-    std::string moduleKey = std::string(moduleAlias) + "/" + moduleName;
-    globalModules[moduleKey] = module;
+static void formatPath(std::string& path) {
+    for (char& c : path) {
+        if (c == '\\')
+            c = '/';
+    }
+}
+
+static int static_require(lua_State* L) {
+    std::string path = luaL_checkstring(L, 1);
+    Engine* engine = static_cast<Engine*>(lua_touserdata(L, lua_upvalueindex(EngineTag)));
+    if (!engine) {
+        luaL_error(L, "Internal error: Engine not found");
+        return 0;
+    }
+    return luaRequire(engine, L, path);
 }
 
 Engine::Engine(Package context, std::filesystem::path filePath) :
@@ -68,24 +78,8 @@ void Engine::initialize(int argc, char* argv[]) {
     luaL_openlibs(mainState);
     initializeRequire();
     initializeGlobalArgs(argc, argv);
+    initializeNativeModules(mainState);
     luaL_sandbox(mainState);
-}
-
-static void formatPath(std::string& path) {
-    for (char& c : path) {
-        if (c == '\\')
-            c = '/';
-    }
-}
-
-static int static_require(lua_State* L) {
-    std::string path = luaL_checkstring(L, 1);
-    Engine* engine = static_cast<Engine*>(lua_touserdata(L, lua_upvalueindex(EngineTag)));
-    if (!engine) {
-        luaL_error(L, "Internal error: Engine not found");
-        return 0;
-    }
-    return luaRequire(engine, L, path);
 }
 
 void Engine::initializeRequire() {
@@ -101,6 +95,42 @@ void Engine::initializeGlobalArgs(int argc, char* argv[]) {
         lua_rawseti(mainState, -2, i - 1);
     }
     lua_setglobal(mainState, "GlobalArgs");
+}
+
+void Engine::registerNativeModule(std::shared_ptr<ILuauModule> module) {
+    const char* moduleName = module->getModuleName();
+    const char* moduleAlias = module->getModuleAlias();
+    std::string moduleKey = std::string(moduleAlias) + "/" + moduleName;
+    globalModules[moduleKey] = module;
+}
+
+void Engine::initializeNativeModules(lua_State* L) {
+    for (auto& module: globalModules) {
+        int res = initNativeModule(L, module.first);
+        if (!res) std::cout << "Could not initialize native module: " << module.first << "\n";
+    }
+}
+
+int Engine::initNativeModule(lua_State* L, const std::string path) {
+    auto module = globalModules.find(path);
+    if (module != globalModules.end()) {
+        ILuauModule* initializedModule = module->second->initialize(this);
+        modules[path] = std::shared_ptr<ILuauModule>(initializedModule);
+
+        const LuauExport* exports = initializedModule->getExports();
+        lua_createtable(L, 0, sizeof(exports) / sizeof(exports[0]));
+        for (int i = 0; exports[i].name != nullptr; i++)
+        {
+            // Create a closure that captures the module instance
+            lua_pushlightuserdata(L, initializedModule);
+            lua_pushcclosure(L, exports[i].func, exports[i].name, 1);
+            lua_setfield(L, -2, exports[i].name);
+        }
+        lua_setreadonly(L, -1, 1);
+        luauModuleRefs[path] = lua_ref(L, -1);
+        return 1;
+    }
+    return 0;
 }
 
 int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState) {
@@ -121,7 +151,7 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
 
     int status = lua_resume(T, nullptr, 0);
     if (status != LUA_OK) {
-        std::cout << (status == LUA_YIELD ? "Unexpected yield" : "Could not execute module: " + std::string(lua_tostring(T, -1))) << std::endl;
+        std::cout << (status == LUA_YIELD ? "Unexpected yield" : "Could not execute module: " + std::string(lua_tostring(T, -1))) << "\n";
         lua_pop(L, -1);
         return 0;
     }
@@ -160,31 +190,6 @@ int Engine::getModuleRef(lua_State* L, const std::string path) {
     auto moduleRef = luauModuleRefs.find(path);
     if (moduleRef != luauModuleRefs.end()) {
         lua_rawgeti(L, LUA_REGISTRYINDEX, moduleRef->second);
-        return 1;
-    }
-    return 0;
-}
-
-int Engine::setModuleRef(lua_State* L, const std::string path) {
-    auto module = globalModules.find(path);
-    if (module != globalModules.end()) {
-        // We initialize the module here on first require so that modules can have
-        // access to the engine - some module implementations might need special
-        // handling like preventing the runtime from exiting.
-        ILuauModule* initializedModule = module->second->initialize(this);
-        modules[path] = std::shared_ptr<ILuauModule>(initializedModule);
-
-        const LuauExport* exports = initializedModule->getExports();
-        lua_createtable(L, 0, sizeof(exports) / sizeof(exports[0]));
-        for (int i = 0; exports[i].name != nullptr; i++)
-        {
-            // Create a closure that captures the module instance
-            lua_pushlightuserdata(L, initializedModule);
-            lua_pushcclosure(L, exports[i].func, exports[i].name, 1);
-            lua_setfield(L, -2, exports[i].name);
-        }
-        lua_setreadonly(L, -1, 1);
-        luauModuleRefs[path] = lua_ref(L, -1);
         return 1;
     }
     return 0;
@@ -237,7 +242,7 @@ void Engine::run() {
             messagePumpCallback();
         }
     } catch (const std::exception& e) {
-        std::cerr << "Failed to execute script: " << e.what() << std::endl;
+        std::cerr << "Failed to execute script: " << e.what() << "\n";
     }
 }
 
