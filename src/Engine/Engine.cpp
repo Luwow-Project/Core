@@ -86,6 +86,7 @@ void Engine::initialize(int argc, char* argv[]) {
     initializeRequire();
     initializeGlobalArgs(argc, argv);
     initializeNativeModules(mainState);
+    initializeRuntimeSpecification();
     luaL_sandbox(mainState);
 }
 
@@ -101,7 +102,19 @@ void Engine::initializeGlobalArgs(int argc, char* argv[]) {
         lua_pushstring(mainState, argv[i]);
         lua_rawseti(mainState, -2, i - 1);
     }
+    lua_setreadonly(mainState, -1, true);
     lua_setglobal(mainState, "GlobalArgs");
+}
+
+// We do not have versioning or github specifications yet, these may come with an automated build system in the future.
+void Engine::initializeRuntimeSpecification() {
+    lua_newtable(mainState);
+    lua_pushstring(mainState, "luwow");
+    lua_setfield(mainState, -2, "name");
+    lua_pushstring(mainState, "https://github.com/Luwow-Project");
+    lua_setfield(mainState, -2, "url");
+    lua_setreadonly(mainState, -1, true);
+    lua_setglobal(mainState, "_RUNTIME");
 }
 
 void Engine::registerNativeModule(std::shared_ptr<ILuauModule> module) {

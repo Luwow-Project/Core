@@ -41,6 +41,7 @@ public:
     void initialize(int argc, char* argv[]);
     void initializeRequire();
     void initializeGlobalArgs(int argc, char* argv[]);
+    void initializeRuntimeSpecification();
     void setConfigPath(char* path) { configPath = std::filesystem::path(path); };
     void setConfigPath(std::filesystem::path path) { configPath = path; }; 
     void setConfig(Config* configRef) { config = configRef; };
