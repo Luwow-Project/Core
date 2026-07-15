@@ -34,9 +34,11 @@ static int static_require(lua_State* L) {
 Engine::Engine(Package context, std::filesystem::path filePath) :
     mainState(nullptr),
     usesCompiler(false),
-    usesDebuggerNewLuauCallback(false),
+    usesDebuggerLuauCallback(false),
+    usesTaskScheduler(false),
     compilerCallback(nullptr),
-    debuggerNewLuauCallback(nullptr),
+    debuggerLuauCallback(nullptr),
+    taskSchedulerCallback(nullptr),
     package(context),
     filePath(filePath),
     usesMessagePump(false),
@@ -59,14 +61,19 @@ void Engine::setCompilerCallback(CompilerCallbackType callback) {
     compilerCallback = callback;
 }
 
-void Engine::setDebuggerNewLuauCallback(DebuggerNewLuauCallbackType callback) {
-    usesDebuggerNewLuauCallback = true;
-    debuggerNewLuauCallback = callback;
+void Engine::setDebuggerLuauCallback(DebuggerLuauCallbackType callback) {
+    usesDebuggerLuauCallback = true;
+    debuggerLuauCallback = callback;
 }
 
 void Engine::setMessagePumpCallback(MessagePumpCallbackType callback) {
     usesMessagePump = true;
     messagePumpCallback = callback;
+}
+
+void Engine::setTaskSchedulerCallback(TaskSchedulerCallbackType callback) {
+    usesTaskScheduler = true;
+    taskSchedulerCallback = callback;
 }
 
 void Engine::initialize(int argc, char* argv[]) {
@@ -111,6 +118,11 @@ void Engine::initializeNativeModules(lua_State* L) {
     }
 }
 
+void Engine::callDebuggerLuauCallback(lua_State* L, const std::string& full_path, bool is_entry) {
+    if (!usesDebuggerLuauCallback) return;
+    debuggerLuauCallback(L, full_path, true);
+}
+
 int Engine::initNativeModule(lua_State* L, const std::string path) {
     auto module = globalModules.find(path);
     if (module != globalModules.end()) {
@@ -145,13 +157,11 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
         return 0;
     }
 
-    if (usesDebuggerNewLuauCallback) {
-        debuggerNewLuauCallback(T, chunkName, true);
-    }
+    callDebuggerLuauCallback(L, chunkName, true);    
 
     int status = lua_resume(T, nullptr, 0);
     if (status != LUA_OK) {
-        std::cout << (status == LUA_YIELD ? "Unexpected yield" : "Could not execute module: " + std::string(lua_tostring(T, -1))) << "\n";
+        std::cout << (status == LUA_YIELD ? "Encountered an unexpected yield during Luau execution, please use a scheduler." : "Could not execute module: " + std::string(lua_tostring(T, -1))) << "\n";
         lua_pop(L, -1);
         return 0;
     }
@@ -167,12 +177,12 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
     return 1;
 }
 
-int Engine::loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef, bool useGivenState) {
-    int status = executeModule(L, moduleName, bytecode, saveRef, useGivenState);
+int Engine::loadModuleFromBytecode(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState) {
+    int status = usesTaskScheduler ? taskSchedulerCallback(L, chunkName, bytecode, saveRef) : executeModule(L, chunkName, bytecode, saveRef, useGivenState);
     if (!status) return 0;
 
     if (saveRef) {
-        luauModuleRefs[moduleName] = lua_ref(L, -1);
+        luauModuleRefs[chunkName] = lua_ref(L, -1);
         lua_remove(L, 1);
     } else {
         lua_pop(L, 1);

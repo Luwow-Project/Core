@@ -16,8 +16,9 @@ struct Config;
 // Tag for the Engine object in the Luau userdata
 #define EngineTag 1
 typedef void (*CompilerCallbackType)(const std::filesystem::path& modulePath, std::string& resultingBytecode);
-typedef void (*DebuggerNewLuauCallbackType)(lua_State* L, const std::string& full_path, bool is_entry);
+typedef void (*DebuggerLuauCallbackType)(lua_State* L, const std::string& full_path, bool is_entry);
 typedef void (*MessagePumpCallbackType)();
+typedef int (*TaskSchedulerCallbackType)(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef);
 
 class Engine {
 public:
@@ -30,8 +31,11 @@ public:
     int initNativeModule(lua_State* L, const std::string path);
 
     void setCompilerCallback(CompilerCallbackType callback);
-    void setDebuggerNewLuauCallback(DebuggerNewLuauCallbackType callback);
+    void setDebuggerLuauCallback(DebuggerLuauCallbackType callback);
     void setMessagePumpCallback(MessagePumpCallbackType callback);
+    void setTaskSchedulerCallback(TaskSchedulerCallbackType callback);
+
+    void callDebuggerLuauCallback(lua_State* L, const std::string& full_path, bool is_entry);
 
     // Initializes the Luau State with built-ins
     void initialize(int argc, char* argv[]);
@@ -49,7 +53,7 @@ public:
     int isInPackage(lua_State* L, const std::string path, bool useGivenState);
 
     int compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath, bool useGivenState);
-    int loadModuleFromBytecode(lua_State* L, const std::string& moduleName, const std::string& bytecode, bool saveRef, bool useGivenState);
+    int loadModuleFromBytecode(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState);
     int executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState);
     void run();
 
@@ -62,13 +66,15 @@ private:
 
     bool usesCompiler;
     CompilerCallbackType compilerCallback;
-    bool usesDebuggerNewLuauCallback;
-    DebuggerNewLuauCallbackType debuggerNewLuauCallback;
+    bool usesDebuggerLuauCallback;
+    DebuggerLuauCallbackType debuggerLuauCallback;
+    bool usesMessagePump;
+    MessagePumpCallbackType messagePumpCallback;
+    bool usesTaskScheduler;
+    TaskSchedulerCallbackType taskSchedulerCallback;
     Package package;
     std::filesystem::path filePath;
     std::filesystem::path configPath;
-    bool usesMessagePump;
-    MessagePumpCallbackType messagePumpCallback;
     // DLLs and internal modules
     std::unordered_map<std::string, std::shared_ptr<ILuauModule>> modules;
     std::unordered_map<std::string, int> luauModuleRefs;
