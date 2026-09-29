@@ -2,6 +2,8 @@
 #include "Package.h"
 #include "Require.h"
 #include "Engine.h"
+#include "Config.h"
+#include "ModuleLoader.h"
 
 #include "lua.h"
 #include "lualib.h"
@@ -9,10 +11,16 @@
 #include <cstring>
 #include <iostream>
 #include <fstream>
+#include <mutex>
 
 namespace Luwow::Engine {
 
 static std::unordered_map<std::string, std::shared_ptr<ILuauModule>> globalModules;
+static std::mutex globalModulesMutex; // Modules can be registered while other hosts are running
+
+static std::string getModuleKey(const ILuauModule* module) {
+    return std::string(module->getModuleAlias()) + "/" + module->getModuleName();
+}
 
 static void formatPath(std::string& path) {
     for (char& c : path) {
@@ -85,6 +93,7 @@ void Engine::initialize(int argc, char* argv[]) {
     luaL_openlibs(mainState);
     initializeRequire();
     initializeGlobalArgs(argc, argv);
+    initializeConfig();
     initializeNativeModules(mainState);
     initializeRuntimeSpecification();
     luaL_sandbox(mainState);
@@ -106,6 +115,20 @@ void Engine::initializeGlobalArgs(int argc, char* argv[]) {
     lua_setglobal(mainState, "GlobalArgs");
 }
 
+// Loads the config before native modules initialize, so the module DLLs it lists are registered with them.
+void Engine::initializeConfig() {
+    if (configPath.empty()) return;
+
+    lua_State* T = lua_newthread(mainState);
+    lua_pushstring(T, configPath.generic_string().c_str());
+    try {
+        Luwow::Engine::getConfig(this, T, std::filesystem::current_path().generic_string());
+    } catch (const std::exception& e) {
+        std::cerr << "Could not load config " << configPath.string() << ": " << e.what() << "\n";
+    }
+    lua_pop(mainState, 1);
+}
+
 // We do not have versioning or github specifications yet, these may come with an automated build system in the future.
 void Engine::initializeRuntimeSpecification() {
     lua_newtable(mainState);
@@ -118,16 +141,47 @@ void Engine::initializeRuntimeSpecification() {
 }
 
 void Engine::registerNativeModule(std::shared_ptr<ILuauModule> module) {
-    const char* moduleName = module->getModuleName();
-    const char* moduleAlias = module->getModuleAlias();
-    std::string moduleKey = std::string(moduleAlias) + "/" + moduleName;
-    globalModules[moduleKey] = module;
+    std::lock_guard<std::mutex> lock(globalModulesMutex);
+    globalModules[getModuleKey(module.get())] = module;
 }
 
 void Engine::initializeNativeModules(lua_State* L) {
-    for (auto& module: globalModules) {
-        int res = initNativeModule(L, module.first);
-        if (!res) std::cout << "Could not initialize native module: " << module.first << "\n";
+    std::vector<std::string> keys;
+    {
+        std::lock_guard<std::mutex> lock(globalModulesMutex);
+        for (auto& module: globalModules) keys.push_back(module.first);
+    }
+
+    for (const std::string& key : keys) {
+        int res = initNativeModule(L, key);
+        if (!res) std::cout << "Could not initialize native module: " << key << "\n";
+    }
+    nativeModulesInitialized = true;
+}
+
+// Registers the module of each DLL, and initializes it right away if native modules already were.
+void Engine::loadDynamicModules(const std::vector<std::filesystem::path>& paths) {
+    if (paths.empty()) return;
+
+    if (!dynamicModulesEnabled) {
+        std::cout << "DLL modules are not supported in this build (all modules are statically linked).\n";
+        return;
+    }
+
+    for (const std::filesystem::path& path : paths) {
+        std::string error;
+        std::shared_ptr<ILuauModule> module = ModuleLoader::load(path, error);
+        if (!module) {
+            std::cout << "Could not load module " << path.string() << ": " << error << "\n";
+            continue;
+        }
+
+        registerNativeModule(module);
+
+        std::string key = getModuleKey(module.get());
+        if (nativeModulesInitialized && modules.find(key) == modules.end()) {
+            if (!initNativeModule(mainState, key)) std::cout << "Could not initialize native module: " << key << "\n";
+        }
     }
 }
 
@@ -137,9 +191,15 @@ void Engine::callDebuggerLuauCallback(lua_State* L, const std::string& full_path
 }
 
 int Engine::initNativeModule(lua_State* L, const std::string path) {
-    auto module = globalModules.find(path);
-    if (module != globalModules.end()) {
-        ILuauModule* initializedModule = module->second->initialize(this);
+    std::shared_ptr<ILuauModule> prototype;
+    {
+        std::lock_guard<std::mutex> lock(globalModulesMutex);
+        auto module = globalModules.find(path);
+        if (module != globalModules.end()) prototype = module->second;
+    }
+
+    if (prototype) {
+        ILuauModule* initializedModule = prototype->initialize(this);
         modules[path] = std::shared_ptr<ILuauModule>(initializedModule);
 
         const LuauExport* exports = initializedModule->getExports();
@@ -205,6 +265,7 @@ int Engine::loadModuleFromBytecode(lua_State* L, const std::string& chunkName, c
 }
 
 std::string Engine::getModuleName(const std::string key) {
+    std::lock_guard<std::mutex> lock(globalModulesMutex);
     auto it = globalModules.find(key);
     return (it == globalModules.end()) ? std::string() : key;
 }

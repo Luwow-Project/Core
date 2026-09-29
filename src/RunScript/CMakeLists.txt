@@ -11,4 +11,20 @@ target_link_libraries(Luwow.RunScript PRIVATE
     Luau.Common
 )
 set_target_properties(Luwow.RunScript PROPERTIES OUTPUT_NAME runscript)
-target_sources(Luwow.RunScript PRIVATE main.cpp)
+target_sources(Luwow.RunScript PRIVATE
+    main.cpp
+    StaticModules.h
+)
+
+# Libraries statically bound into runscript, the default source registers none
+if(LUWOW_STATIC_MODULES_SOURCE)
+    target_sources(Luwow.RunScript PRIVATE ${LUWOW_STATIC_MODULES_SOURCE})
+    target_link_libraries(Luwow.RunScript PRIVATE ${LUWOW_STATIC_MODULE_TARGETS})
+else()
+    target_sources(Luwow.RunScript PRIVATE StaticModules.cpp)
+endif()
+
+# Exports the Luau API so runscript can load module DLLs
+if(COMMAND luwow_enable_module_host)
+    luwow_enable_module_host(Luwow.RunScript)
+endif()

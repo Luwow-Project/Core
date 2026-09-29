@@ -26,6 +26,7 @@ namespace Luwow::Engine {
 
         std::vector<std::string> globals;
         std::map<std::string, AliasInfo> aliases;  // alias name -> resolved path
+        std::vector<std::filesystem::path> dlls;   // resolved module DLL paths
 
         bool found = false;
     };
