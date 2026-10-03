@@ -2,11 +2,13 @@
 
 #include "Package.h"
 #include "ILuauModule.h"
+#include "ILuauHost.h"
 
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <filesystem>
+#include <vector>
 
 namespace Luwow::Engine {
 
@@ -16,11 +18,8 @@ struct Config;
 // Tag for the Engine object in the Luau userdata
 #define EngineTag 1
 typedef void (*CompilerCallbackType)(const std::filesystem::path& modulePath, std::string& resultingBytecode);
-typedef void (*DebuggerLuauCallbackType)(lua_State* L, const std::string& full_path, bool is_entry);
-typedef void (*MessagePumpCallbackType)();
-typedef int (*TaskSchedulerCallbackType)(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef);
 
-class Engine {
+class Engine : public ILuauHost {
 public:
     Engine(Package context, std::filesystem::path filePath);
     ~Engine();
@@ -30,17 +29,22 @@ public:
     void initializeNativeModules(lua_State* L);
     int initNativeModule(lua_State* L, const std::string path);
 
+    // Loads module DLLs and registers their modules, only allowed in executables that export the Luau API.
+    void loadDynamicModules(const std::vector<std::filesystem::path>& paths);
+    void setDynamicModulesEnabled(bool enabled) { dynamicModulesEnabled = enabled; };
+
     void setCompilerCallback(CompilerCallbackType callback);
     void setDebuggerLuauCallback(DebuggerLuauCallbackType callback);
-    void setMessagePumpCallback(MessagePumpCallbackType callback);
-    void setTaskSchedulerCallback(TaskSchedulerCallbackType callback);
+    void setMessagePumpCallback(MessagePumpCallbackType callback) override;
+    void setTaskSchedulerCallback(TaskSchedulerCallbackType callback) override;
 
-    void callDebuggerLuauCallback(lua_State* L, const std::string& full_path, bool is_entry);
+    void callDebuggerLuauCallback(lua_State* L, const std::string& full_path, bool is_entry) override;
 
     // Initializes the Luau State with built-ins
     void initialize(int argc, char* argv[]);
     void initializeRequire();
     void initializeGlobalArgs(int argc, char* argv[]);
+    void initializeConfig();
     void initializeRuntimeSpecification();
     void setConfigPath(char* path) { configPath = std::filesystem::path(path); };
     void setConfigPath(std::filesystem::path path) { configPath = path; }; 
@@ -59,7 +63,7 @@ public:
     void run();
 
     std::filesystem::path getConfigPath() { return configPath; };
-    lua_State* getMainState() { return mainState; };
+    lua_State* getMainState() override { return mainState; };
     Config* getConfig() { return config; };
 private:
     lua_State* mainState;
@@ -73,6 +77,8 @@ private:
     MessagePumpCallbackType messagePumpCallback;
     bool usesTaskScheduler;
     TaskSchedulerCallbackType taskSchedulerCallback;
+    bool dynamicModulesEnabled = false;
+    bool nativeModulesInitialized = false;
     Package package;
     std::filesystem::path filePath;
     std::filesystem::path configPath;

@@ -2,6 +2,7 @@
 
 #include "Config.h"
 #include "Engine.h"
+#include "ModuleLoader.h"
 
 #include "lualib.h"
 #include "lua.h"
@@ -198,7 +199,57 @@ namespace Luwow::Engine {
     }
     // #endregion
 
-    static void runLuauConfig(Engine* engine, lua_State* L, fs::path path, std::string root, fs::path directory, Luau::Config& cfg) {
+    // Resolves a config value relative to the config file's directory
+    static fs::path resolveConfigPath(const fs::path& configDir, const std::string& value) {
+        std::error_code ec;
+        fs::path candidate = configDir / value;
+        fs::path resolved = fs::weakly_canonical(candidate, ec);
+
+        if (ec) {
+            ec.clear();
+            resolved = fs::absolute(candidate, ec);
+            if (ec) resolved = candidate;
+        }
+        return resolved;
+    }
+
+    // Reads DLLs, either a directory of module DLLs or an array of DLL paths.
+    // Paths without an extension get the platform's DLL suffix.
+    static std::optional<std::string> parseDlls(const Luau::ConfigTable& luauTable, const fs::path& directory, std::vector<fs::path>& dlls) {
+        const Luau::ConfigValue* value = luauTable.find("dlls");
+        if (!value) return std::nullopt;
+
+        if (const std::string* dllDirectory = value->get_if<std::string>()) {
+            std::string error;
+            dlls = ModuleLoader::listDirectory(resolveConfigPath(directory, *dllDirectory), error);
+            if (!error.empty()) std::cerr << "Warning: " << error << "\n";
+            return std::nullopt;
+        }
+
+        const Luau::ConfigTable* dllTable = value->get_if<Luau::ConfigTable>();
+        if (!dllTable) return "configuration value for key \"dlls\" must be a string or an array of strings";
+
+        dlls.resize(dllTable->size());
+        for (const auto& [k, v] : *dllTable) {
+            const double* key = k.get_if<double>();
+            if (!key) return "configuration array \"dlls\" must only have numeric keys";
+
+            const size_t index = static_cast<size_t>(*key);
+            if (index < 1 || dllTable->size() < index)
+                return "configuration array \"dlls\" contains invalid numeric key";
+
+            const std::string* dll = v.get_if<std::string>();
+            if (!dll) return "configuration value in \"dlls\" table must be a string";
+
+            fs::path path = resolveConfigPath(directory, *dll);
+            if (!path.has_extension()) path += ModuleLibrarySuffix;
+            dlls[index - 1] = path;
+        }
+
+        return std::nullopt;
+    }
+
+    static void runLuauConfig(Engine* engine, lua_State* L, fs::path path, std::string root, fs::path directory, Luau::Config& cfg, std::vector<fs::path>& dlls) {
         int ok;
         if (!engine->usesPackage()) {
             fs::path fullPath = (fs::path(root) / path).lexically_normal();
@@ -239,6 +290,11 @@ namespace Luwow::Engine {
         if (maybeError) {
             luaL_error(L, "%s", (*maybeError).c_str());
         }
+
+        auto dllError = parseDlls(*luauTable, directory, dlls);
+        if (dllError) {
+            luaL_error(L, "%s", (*dllError).c_str());
+        }
     }
 
     std::optional<Config*> getConfig(Engine* engine, lua_State* L, std::string root) {
@@ -252,7 +308,7 @@ namespace Luwow::Engine {
         fs::path configPath = engine->getConfigPath();
         if (configPath.empty()) return std::nullopt;
 
-        runLuauConfig(engine, L, configPath, root, configPath.parent_path(), cfg);
+        runLuauConfig(engine, L, configPath, root, configPath.parent_path(), cfg, out->dlls);
 
         out->configDir = configPath.parent_path();
         out->enabledLints = cfg.enabledLint.warningMask;
@@ -263,17 +319,7 @@ namespace Luwow::Engine {
         out->found = true;
 
         for (auto& [key, info] : cfg.aliases) {
-            // Resolve alias value relative to the config file's directory
-            fs::path configDir{ std::string{ info.configLocation } };
-            std::error_code ec;
-            fs::path candidate = configDir / info.value;
-            fs::path resolved = fs::weakly_canonical(candidate, ec);
-
-            if (ec) {
-                ec.clear();
-                resolved = fs::absolute(candidate, ec);
-                if (ec) resolved = candidate;
-            }
+            fs::path resolved = resolveConfigPath(std::string{ info.configLocation }, info.value);
 
             AliasInfo ainfo = {
                 engine->usesPackage() ? "./" + (fs::path(std::string(info.configLocation)) / fs::path(info.value)).lexically_normal().generic_string() : resolved.string(),
@@ -284,6 +330,7 @@ namespace Luwow::Engine {
         }
 
         engine->setConfig(out);
+        engine->loadDynamicModules(out->dlls);
         return out;
     }
 }

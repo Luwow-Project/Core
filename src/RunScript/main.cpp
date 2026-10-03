@@ -3,6 +3,7 @@
 #include <filesystem>
 #include "luacode.h"
 #include "Engine.h"
+#include "StaticModules.h"
 
 using Engine = Luwow::Engine::Engine;
 using Package = Luwow::Engine::Package;
@@ -33,12 +34,20 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Put your own binary modules here and DLLs here
+    // Register the libraries bound into this executable
+    Luwow::registerStaticModules();
 
     Engine engine((Package()), std::filesystem::path(argv[1]));
     engine.setCompilerCallback(compilerCallback);
+
+    #ifdef LUWOW_MODULE_HOST
+        // This executable exports the Luau API, so it can load the module DLLs listed in the config
+        engine.setDynamicModulesEnabled(true);
+    #endif
+
+    // The config is set before initializing so its DLLs are loaded before the script runs
+    if (argc > 2) engine.setConfigPath(argv[2]);
     engine.initialize(argc, argv);
-    if (argv[2]) engine.setConfigPath(argv[2]);
     engine.run();
 
     return 0;

@@ -8,6 +8,8 @@
 #include "ILuauModule.h"
 
 namespace Luwow::Engine {
+    class Engine;
+
     struct LocatedModule {
         std::string path;
         std::string formattedPath;
