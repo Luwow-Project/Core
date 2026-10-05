@@ -41,21 +41,15 @@ static int static_require(lua_State* L) {
 
 Engine::Engine(Package context, std::filesystem::path filePath) :
     mainState(nullptr),
-    usesCompiler(false),
-    usesDebuggerLuauCallback(false),
-    usesTaskScheduler(false),
-    compilerCallback(nullptr),
-    debuggerLuauCallback(nullptr),
-    taskSchedulerCallback(nullptr),
     package(context),
     filePath(filePath),
-    usesMessagePump(false),
-    messagePumpCallback(nullptr),
     modules(),
     luauModuleRefs()
 {}
 
 Engine::~Engine() {
+    shutdownModules();
+
     if (mainState) {
         for (auto& [name, ref] : luauModuleRefs) {
             lua_unref(mainState, ref);
@@ -64,24 +58,23 @@ Engine::~Engine() {
     }
 }
 
-void Engine::setCompilerCallback(CompilerCallbackType callback) {
-    usesCompiler = true;
-    compilerCallback = callback;
+// Waiting with the state held would keep every other thread out of Luau, so it's released meanwhile
+bool Engine::receive(int subscription, Message& message, int timeoutMs) {
+    int held = (timeoutMs != 0) ? stateMutex.release() : 0;
+    bool received = messageBus.receive(subscription, message, timeoutMs);
+    stateMutex.reacquire(held);
+    return received;
 }
 
-void Engine::setDebuggerLuauCallback(DebuggerLuauCallbackType callback) {
-    usesDebuggerLuauCallback = true;
-    debuggerLuauCallback = callback;
-}
+// Compiles a script through the compiler-compile handler, false when nothing handles it
+bool Engine::compile(const std::string& path, std::string& bytecode) {
+    Message request;
+    request.topic = Topics::CompilerCompile;
+    request.data = path;
+    if (!messageBus.request(request)) return false;
 
-void Engine::setMessagePumpCallback(MessagePumpCallbackType callback) {
-    usesMessagePump = true;
-    messagePumpCallback = callback;
-}
-
-void Engine::setTaskSchedulerCallback(TaskSchedulerCallbackType callback) {
-    usesTaskScheduler = true;
-    taskSchedulerCallback = callback;
+    bytecode = std::move(request.data);
+    return true;
 }
 
 void Engine::initialize(int argc, char* argv[]) {
@@ -97,6 +90,9 @@ void Engine::initialize(int argc, char* argv[]) {
     initializeNativeModules(mainState);
     initializeRuntimeSpecification();
     luaL_sandbox(mainState);
+
+    // Parallel modules start before the script, so it can use them right away
+    parallelLayer.start();
 }
 
 void Engine::initializeRequire() {
@@ -115,7 +111,6 @@ void Engine::initializeGlobalArgs(int argc, char* argv[]) {
     lua_setglobal(mainState, "GlobalArgs");
 }
 
-// Loads the config before native modules initialize, so the module DLLs it lists are registered with them.
 void Engine::initializeConfig() {
     if (configPath.empty()) return;
 
@@ -185,11 +180,6 @@ void Engine::loadDynamicModules(const std::vector<std::filesystem::path>& paths)
     }
 }
 
-void Engine::callDebuggerLuauCallback(lua_State* L, const std::string& full_path, bool is_entry) {
-    if (!usesDebuggerLuauCallback) return;
-    debuggerLuauCallback(L, full_path, true);
-}
-
 int Engine::initNativeModule(lua_State* L, const std::string path) {
     std::shared_ptr<ILuauModule> prototype;
     {
@@ -201,6 +191,12 @@ int Engine::initNativeModule(lua_State* L, const std::string path) {
     if (prototype) {
         ILuauModule* initializedModule = prototype->initialize(this);
         modules[path] = std::shared_ptr<ILuauModule>(initializedModule);
+
+        if (initializedModule->getRunMode() == RunMode::Parallel) {
+            parallelLayer.add(initializedModule);
+        } else {
+            serialLayer.add(initializedModule);
+        }
 
         const LuauExport* exports = initializedModule->getExports();
         lua_createtable(L, 0, sizeof(exports) / sizeof(exports[0]));
@@ -230,11 +226,25 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
         return 0;
     }
 
-    callDebuggerLuauCallback(L, chunkName, true);    
+    Message debuggerRequest;
+    debuggerRequest.topic = Topics::DebuggerLoad;
+    debuggerRequest.data = chunkName;
+    debuggerRequest.state = L;
+    messageBus.request(debuggerRequest);
 
-    int status = lua_resume(T, nullptr, 0);
+    Message spawnRequest;
+    spawnRequest.topic = Topics::SchedulerSpawn;
+    spawnRequest.state = T;
+    bool scheduled = messageBus.request(spawnRequest);
+    int status = scheduled ? spawnRequest.result : lua_resume(T, nullptr, 0);
+
     if (status != LUA_OK) {
-        std::cout << (status == LUA_YIELD ? "Encountered an unexpected yield during Luau execution, please use a scheduler." : "Could not execute module: " + std::string(lua_tostring(T, -1))) << "\n";
+        if (status == LUA_YIELD) {
+            std::cout << (scheduled ? "Thread yielded with no active tasks." : "Encountered an unexpected yield during Luau execution, please use a scheduler.") << "\n";
+        } else {
+            const char* error = lua_tostring(T, -1);
+            std::cout << "Could not execute module: " << (error ? error : "unknown error") << "\n";
+        }
         lua_pop(L, -1);
         return 0;
     }
@@ -251,7 +261,7 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
 }
 
 int Engine::loadModuleFromBytecode(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState) {
-    int status = usesTaskScheduler ? taskSchedulerCallback(L, chunkName, bytecode, saveRef) : executeModule(L, chunkName, bytecode, saveRef, useGivenState);
+    int status = executeModule(L, chunkName, bytecode, saveRef, useGivenState);
     if (!status) return 0;
 
     if (saveRef) {
@@ -289,13 +299,11 @@ int Engine::isInPackage(lua_State* L, const std::string path, bool useGivenState
 }
 
 int Engine::compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath, bool useGivenState) {
-    if (!usesCompiler) return 0;
-    if (std::filesystem::exists(path) && usesCompiler) {
-        std::string bytecode;
-        compilerCallback(path, bytecode);
-        return loadModuleFromBytecode(L, formattedPath, bytecode, true, useGivenState);
-    }
-    return 0;
+    if (!std::filesystem::exists(path)) return 0;
+
+    std::string bytecode;
+    if (!compile(path, bytecode)) return 0;
+    return loadModuleFromBytecode(L, formattedPath, bytecode, true, useGivenState);
 }
 
 void Engine::run() {
@@ -303,9 +311,7 @@ void Engine::run() {
         std::string chunkName;
         std::string bytecode;
 
-        if (usesCompiler) {
-            // Compile the first file in the package
-            compilerCallback(filePath.string(), bytecode);
+        if (compile(filePath.string(), bytecode)) {
             chunkName = filePath.string();
         } else {
             // Load bytecode from the first file in the package
@@ -319,15 +325,26 @@ void Engine::run() {
 
         formatPath(chunkName);
 
-        int status = loadModuleFromBytecode(mainState, chunkName, bytecode, false, false);
-        if (!status) throw std::runtime_error("Could not execute module: " + chunkName);
-
-        if (usesMessagePump) {
-            messagePumpCallback();
+        {
+            // Parallel modules wait for the state while the main script runs
+            std::lock_guard<StateMutex> lock(stateMutex);
+            int status = loadModuleFromBytecode(mainState, chunkName, bytecode, false, false);
+            if (!status) throw std::runtime_error("Could not execute module: " + chunkName);
         }
+
+        // Serial loops run on the main thread, once they finish the parallel modules are closed
+        serialLayer.run();
     } catch (const std::exception& e) {
         std::cerr << "Failed to execute script: " << e.what() << "\n";
     }
+
+    shutdownModules();
+}
+
+void Engine::shutdownModules() {
+    parallelLayer.requestStop();
+    messageBus.close();
+    parallelLayer.join();
 }
 
 } // namespace Luwow::Engine

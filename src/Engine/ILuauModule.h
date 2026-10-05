@@ -13,28 +13,49 @@ namespace Luwow::Engine {
 
 class ILuauHost;
 
+enum class RunMode {
+    Serial, // Runs on the main thread.
+    Parallel // Runs on their own thread.
+};
+
 // Interface for classes that want to export functions to Luau
 class ILuauModule {
 public:
     virtual ~ILuauModule() = default;
-    
-    // Get the module name
+
+    // Gets the module name
     virtual const char* getModuleName() const = 0;
 
-    // Get the module alias
+    // Gets the module alias
     virtual const char* getModuleAlias() const = 0;
-    
-    // Get the module exports
+
+    // Gets the module exports
     virtual const LuauExport* getExports() const = 0;
 
-    // Create a module instance for the given host
+    // Gets how the module is run, libraries return LUWOW_MODULE_RUN_MODE which CMake sets.
+    virtual RunMode getRunMode() const = 0;
+
+    // Creates a module instance for the given host
     virtual ILuauModule* initialize(ILuauHost* host) = 0;
+
+    // Runs the module's loop until it has no work left.
+    // Code calling into Luau from here must hold the host's state lock.
+    virtual void run() {}
+
+    // Asks a parallel module's run to finish its remaining work and return, called from another thread.
+    virtual void stop() {}
 };
 
 } // namespace Luwow::Engine
 
-// Bumped whenever ILuauModule or ILuauHost change, DLLs built for another version are rejected
 #define LUWOW_MODULE_ABI_VERSION 1
+
+// The run mode a library was built with, from the LUWOW_<NAME>_MODE CMake option
+#if defined(LUWOW_MODULE_PARALLEL) && LUWOW_MODULE_PARALLEL
+    #define LUWOW_MODULE_RUN_MODE Luwow::Engine::RunMode::Parallel
+#else
+    #define LUWOW_MODULE_RUN_MODE Luwow::Engine::RunMode::Serial
+#endif
 
 // Symbols every module DLL exports
 #define LUWOW_MODULE_ABI_SYMBOL "luwow_module_abi"
@@ -49,9 +70,10 @@ public:
 #define LUWOW_CONCAT_IMPL(a, b) a##b
 #define LUWOW_CONCAT(a, b) LUWOW_CONCAT_IMPL(a, b)
 
-// Declares the entry point of a library module, use once per library at global scope.
-// CMake decides the form: DLL exports for a module DLL, or a uniquely named factory
-// (luwow_create_module_<id>) that runscript registers when the library is statically bound.
+/*
+    Depending on how the library is being built, we export certain functions,
+    or we define a uniquely named factory for the executable the library is being bound to.
+*/
 #if defined(LUWOW_BUILDING_MODULE)
     #define LUWOW_REGISTER_MODULE(Type) \
         LUWOW_MODULE_EXPORT int luwow_module_abi() { return LUWOW_MODULE_ABI_VERSION; } \

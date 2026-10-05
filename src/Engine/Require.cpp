@@ -5,6 +5,7 @@
 #include "lualib.h"
 #include "lua.h"
 
+#include <cctype>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -76,11 +77,6 @@ namespace Luwow::Engine {
         return ctx;
     }
 
-    static int requireNative(lua_State* L, const char* szLibrary) {
-        luaL_error(L, "DLL modules are not supported in this build (all modules are statically linked).", "Tried to load: %s", szLibrary);
-        return 0;
-    }
-
     static std::optional<LocatedModule> resolveNative(Engine* engine, std::string alias, std::string key) {
         std::string moduleName = engine->getModuleName(alias + "/" + key);
         if (moduleName.empty()) return std::nullopt;
@@ -91,7 +87,7 @@ namespace Luwow::Engine {
         fs::path fullPath = (fs::path(ctx.callerDir) / fs::path(path)).lexically_normal();
 
         if (fs::is_directory(fullPath)) {
-            fs::path initFilePath = fs::path(fullPath.string() + "\\init.luau");
+            fs::path initFilePath = fullPath / "init.luau";
             if (!fs::exists(initFilePath)) {
                 luaL_error(L, "Require path does not contain an init.luau file.");
                 return std::string();
@@ -127,7 +123,10 @@ namespace Luwow::Engine {
             auto optval = getConfig(engine, L, ctx.root);
             if (optval.has_value()) {
                 auto cfg = optval.value();
-                auto it = cfg->aliases.find(alias);
+                std::string lowercasedAlias = alias;
+                for (char& c : lowercasedAlias) c = (char)std::tolower((unsigned char)c);
+
+                auto it = cfg->aliases.find(lowercasedAlias);
                 if (it != cfg->aliases.end()) {
                     // Explicit config alias - always wins
                     resolvedPath = fs::weakly_canonical(fs::path(it->second.qualified) / fs::path(modulePath));
@@ -195,33 +194,16 @@ namespace Luwow::Engine {
 
         switch(resolved->type) {
             case LocatedModule::TYPE_FILE: {
-                // Native modules silently shadow a lua script.
-                // Windows: [module].dll, Linux: lib[module].so, macOS: lib[module].dylib
-                fs::path basePath = fs::path(resolved->path);
-                fs::path nativePath;
-
-                #if defined(_WIN32)
-                    nativePath = basePath.parent_path() / (basePath.stem().string() + ".dll");
-                #elif defined(__APPLE__)
-                    nativePath = basePath.parent_path() / ("lib" + basePath.stem().string() + ".dylib");
-                #else
-                    nativePath = basePath.parent_path() / ("lib" + basePath.stem().string() + ".so");
-                #endif
-
-                if (fs::exists(nativePath)) {
-                    chunkName = nativePath.generic_string();
-                    nret = requireNative(L, nativePath.string().c_str());
-                } else {
-                    if (!fs::exists(resolved->path)) {
-                        nret = 0;
-                        break;
-                    }
-                    nret = engine->getModuleRef(L, formattedPath);
-                    if (nret > 0) break;
-
-                    nret = engine->compileAndExecute(L, resolved->path, formattedPath, false);
-                    chunkName = formattedPath;
+                if (!fs::exists(resolved->path)) {
+                    nret = 0;
+                    break;
                 }
+                
+                nret = engine->getModuleRef(L, formattedPath);
+                if (nret > 0) break;
+
+                nret = engine->compileAndExecute(L, resolved->path, formattedPath, false);
+                chunkName = formattedPath;
                 break;
             }
 

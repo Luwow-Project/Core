@@ -1,15 +1,18 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <cstdlib>
 #include "luacode.h"
 #include "Engine.h"
 #include "StaticModules.h"
 
 using Engine = Luwow::Engine::Engine;
 using Package = Luwow::Engine::Package;
+using Message = Luwow::Engine::Message;
 
-// Compiles the script from the filesystem and returns the bytecode
-void compilerCallback(const std::filesystem::path& modulePath, std::string& resultingBytecode) {
+// Handles compiler-compile: compiles the script at message.data and replies with its bytecode
+void compileRequest(void* context, Message& message) {
+    std::filesystem::path modulePath(message.data);
     std::ifstream file(modulePath);
     if (!file.is_open()) {
         throw std::runtime_error("Failed to open script file: " + modulePath.string());
@@ -19,13 +22,14 @@ void compilerCallback(const std::filesystem::path& modulePath, std::string& resu
         std::istreambuf_iterator<char>()
     );
     file.close();
-    
+
     size_t bytecodeSize = 0;
     char* bytecode = luau_compile(script.c_str(), script.length(), nullptr, &bytecodeSize);
     if (!bytecode) {
         throw std::runtime_error("Failed to compile script: " + modulePath.string());
     }
-    resultingBytecode = std::string(bytecode, bytecodeSize);
+    message.data = std::string(bytecode, bytecodeSize);
+    free(bytecode);
 }
 
 int main(int argc, char* argv[]) {
@@ -38,7 +42,7 @@ int main(int argc, char* argv[]) {
     Luwow::registerStaticModules();
 
     Engine engine((Package()), std::filesystem::path(argv[1]));
-    engine.setCompilerCallback(compilerCallback);
+    engine.handle(Luwow::Engine::Topics::CompilerCompile, compileRequest, nullptr);
 
     #ifdef LUWOW_MODULE_HOST
         // This executable exports the Luau API, so it can load the module DLLs listed in the config
