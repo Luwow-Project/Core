@@ -27,7 +27,10 @@ namespace Luwow::Engine {
         bool isInit = false;
     };
 
+    // The context from the working directory, as the file system spells it
     RequireContext getRequireContext(lua_State* L);
+    // The context from a given root, such as a package's
+    RequireContext getRequireContext(lua_State* L, const std::string& root);
 
     std::optional<LocatedModule> resolveModule(Engine* engine, lua_State* L, RequireContext& ctx, const std::string path);
     std::optional<LocatedModule> resolveModule(Engine* engine, lua_State* L, const std::string path);

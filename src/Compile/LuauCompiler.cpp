@@ -5,7 +5,7 @@
 
 using Package = Luwow::Engine::Package;
 
-bool LuauCompiler::compileScript(const std::string& scriptPath)
+bool LuauCompiler::compileScript(const std::string& scriptPath, const std::string& name)
 {
     std::ifstream file(scriptPath, std::ios::in | std::ios::binary);
     if (!file)
@@ -29,7 +29,7 @@ bool LuauCompiler::compileScript(const std::string& scriptPath)
         return false;
     }
 
-    package.addFile(scriptPath, std::string(bytecode.get(), bytecodeSize));
+    package.addFile(name, std::string(bytecode.get(), bytecodeSize));
     return true;
 }
 

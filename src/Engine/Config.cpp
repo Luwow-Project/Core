@@ -291,7 +291,10 @@ namespace Luwow::Engine {
             luaL_error(L, "%s", (*maybeError).c_str());
         }
 
-        auto dllError = parseDlls(*luauTable, directory, dlls);
+        if (!engine->getDynamicModulesEnabled()) return;
+
+        fs::path dllDirectory = engine->usesPackage() ? (engine->getPackageDirectory() / directory).lexically_normal() : directory;
+        auto dllError = parseDlls(*luauTable, dllDirectory, dlls);
         if (dllError) {
             luaL_error(L, "%s", (*dllError).c_str());
         }

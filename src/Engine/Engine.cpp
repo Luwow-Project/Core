@@ -45,7 +45,9 @@ Engine::Engine(Package context, std::filesystem::path filePath) :
     filePath(filePath),
     modules(),
     luauModuleRefs()
-{}
+{
+    messageBus.handle(Topics::HostExit, &Engine::exitRequest, this);
+}
 
 Engine::~Engine() {
     shutdownModules();
@@ -75,6 +77,12 @@ bool Engine::compile(const std::string& path, std::string& bytecode) {
 
     bytecode = std::move(request.data);
     return true;
+}
+
+std::filesystem::path Engine::getPackageDirectory() const {
+    std::error_code ec;
+    std::filesystem::path absolute = std::filesystem::absolute(filePath, ec);
+    return (ec ? filePath : absolute).parent_path();
 }
 
 void Engine::initialize(int argc, char* argv[]) {
@@ -156,12 +164,7 @@ void Engine::initializeNativeModules(lua_State* L) {
 
 // Registers the module of each DLL, and initializes it right away if native modules already were.
 void Engine::loadDynamicModules(const std::vector<std::filesystem::path>& paths) {
-    if (paths.empty()) return;
-
-    if (!dynamicModulesEnabled) {
-        std::cout << "DLL modules are not supported in this build (all modules are statically linked).\n";
-        return;
-    }
+    if (paths.empty() || !dynamicModulesEnabled) return;
 
     for (const std::filesystem::path& path : paths) {
         std::string error;
@@ -204,7 +207,8 @@ int Engine::initNativeModule(lua_State* L, const std::string path) {
         {
             // Create a closure that captures the module instance
             lua_pushlightuserdata(L, initializedModule);
-            lua_pushcclosure(L, exports[i].func, exports[i].name, 1);
+            if (exports[i].cont) lua_pushcclosurek(L, exports[i].func, exports[i].name, 1, exports[i].cont);
+            else lua_pushcclosure(L, exports[i].func, exports[i].name, 1);
             lua_setfield(L, -2, exports[i].name);
         }
         lua_setreadonly(L, -1, 1);
@@ -215,13 +219,19 @@ int Engine::initNativeModule(lua_State* L, const std::string path) {
 }
 
 int Engine::executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState) {
-    lua_State* T = (useGivenState) ? lua_newthread(L) : lua_newthread(mainState);
+    lua_State* owner = useGivenState ? L : mainState;
+    lua_checkstack(owner, 1);
+
+    lua_State* T = lua_newthread(owner);
+    int threadRef = lua_ref(owner, -1);
+    lua_pop(owner, 1);
     luaL_sandboxthread(T);
 
     int topres = lua_gettop(T);
     int result = luau_load(T, chunkName.c_str(), bytecode.data(), bytecode.size(), 0);
     if (result != 0) {
-        luaL_error(L, "Failed to load bytecode for module: %s", lua_tostring(L, -1));
+        lua_unref(L, threadRef);
+        luaL_error(L, "Failed to load bytecode for module: %s", lua_tostring(T, -1));
         lua_pop(L, 1);
         return 0;
     }
@@ -245,18 +255,20 @@ int Engine::executeModule(lua_State* L, const std::string& chunkName, const std:
             const char* error = lua_tostring(T, -1);
             std::cout << "Could not execute module: " << (error ? error : "unknown error") << "\n";
         }
-        lua_pop(L, -1);
+        if (status != LUA_YIELD) lua_unref(L, threadRef);
         return 0;
     }
 
     if (saveRef) {
         if ((lua_gettop(T) - topres) == 0) {
+            lua_unref(L, threadRef);
             luaL_error(L, "%s didn't return exactly one value", chunkName.c_str());
             return 0;
         }
         lua_xmove(T, L, 1);
     }
 
+    lua_unref(L, threadRef);
     return 1;
 }
 
@@ -267,8 +279,6 @@ int Engine::loadModuleFromBytecode(lua_State* L, const std::string& chunkName, c
     if (saveRef) {
         luauModuleRefs[chunkName] = lua_ref(L, -1);
         lua_remove(L, 1);
-    } else {
-        lua_pop(L, 1);
     }
 
     return 1;
@@ -289,13 +299,27 @@ int Engine::getModuleRef(lua_State* L, const std::string path) {
     return 0;
 }
 
-int Engine::isInPackage(lua_State* L, const std::string path, bool useGivenState) {
+int Engine::findInPackage(const std::string& path) {
     int index = package.indexOfFile(path);
-    if (index != -1) {
-        std::string bytecode = package.getFileContent(index);
-        return loadModuleFromBytecode(L, path, bytecode, true, useGivenState);
+    if (index == -1) {
+        std::string folder = path;
+        if (folder.size() > 5 && folder.compare(folder.size() - 5, 5, ".luau") == 0) folder.resize(folder.size() - 5);
+        else if (folder.size() > 4 && folder.compare(folder.size() - 4, 4, ".lua") == 0) folder.resize(folder.size() - 4);
+        index = package.indexOfFile(folder + "/init.luau");
+        if (index == -1) index = package.indexOfFile(folder + "/init.lua");
     }
-    return 0;
+    return index;
+}
+
+int Engine::isInPackage(lua_State* L, const std::string path, bool useGivenState) {
+    int index = findInPackage(path);
+    if (index == -1) return 0;
+
+    std::string fileName = package.getFileName(index);
+    if (getModuleRef(L, fileName)) return 1;
+
+    std::string bytecode = package.getFileContent(index);
+    return loadModuleFromBytecode(L, fileName, bytecode, true, useGivenState);
 }
 
 int Engine::compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath, bool useGivenState) {
@@ -333,7 +357,7 @@ void Engine::run() {
         }
 
         // Serial loops run on the main thread, once they finish the parallel modules are closed
-        serialLayer.run();
+        serialLayer.run(exiting);
     } catch (const std::exception& e) {
         std::cerr << "Failed to execute script: " << e.what() << "\n";
     }
@@ -341,7 +365,16 @@ void Engine::run() {
     shutdownModules();
 }
 
+void Engine::exitRequest(void* context, Message&) {
+    static_cast<Engine*>(context)->exiting = true;
+}
+
 void Engine::shutdownModules() {
+    if (exiting) {
+        Message exit;
+        exit.topic = Topics::SchedulerExit;
+        messageBus.request(exit);
+    }
     parallelLayer.requestStop();
     messageBus.close();
     parallelLayer.join();

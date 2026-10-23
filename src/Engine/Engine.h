@@ -7,6 +7,7 @@
 #include "ModuleLayers.h"
 #include "StateMutex.h"
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -34,6 +35,7 @@ public:
     // Loads module DLLs and registers their modules, only allowed in executables that export the Luau API.
     void loadDynamicModules(const std::vector<std::filesystem::path>& paths);
     void setDynamicModulesEnabled(bool enabled) { dynamicModulesEnabled = enabled; };
+    bool getDynamicModulesEnabled() const { return dynamicModulesEnabled; };
 
     void lockState() override { stateMutex.lock(); };
     void unlockState() override { stateMutex.unlock(); };
@@ -67,6 +69,7 @@ public:
 
     int getModuleRef(lua_State* L, const std::string path);
     int isInPackage(lua_State* L, const std::string path, bool useGivenState);
+    int findInPackage(const std::string& path);
 
     int compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath, bool useGivenState);
     int loadModuleFromBytecode(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState);
@@ -77,6 +80,8 @@ public:
     void shutdownModules();
 
     std::filesystem::path getConfigPath() { return configPath; };
+    // The folder of the script or package being run, what a package's DLL paths are relative to
+    std::filesystem::path getPackageDirectory() const;
     lua_State* getMainState() override { return mainState; };
     Config* getConfig() { return config; };
 private:
@@ -100,6 +105,10 @@ private:
     MessageBus messageBus;
     SerialLayer serialLayer;
     ParallelLayer parallelLayer;
+
+    // Set by host-exit
+    std::atomic<bool> exiting = false;
+    static void exitRequest(void* context, Message& message);
 };
 
 } // namespace Luwow::Engine

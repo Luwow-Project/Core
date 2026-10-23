@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <cstdint>
+#include <filesystem>
 
 namespace Luwow::Engine {
 
@@ -12,15 +13,24 @@ Package::~Package() {}
 void Package::addFile(const std::string& filePath, const std::string& content) {
     fileNames.push_back(filePath);
     fileContents.push_back(content);
+    indexed = false;
+}
+
+static std::string normalizeFileName(std::string path) {
+    for (char& c : path) if (c == '\\') c = '/';
+    std::string normal = std::filesystem::path(path).lexically_normal().generic_string();
+    while (normal.rfind("./", 0) == 0) normal.erase(0, 2);
+    return normal;
 }
 
 int Package::indexOfFile(const std::string& filePath) {
-    for (int i = 0; i < fileNames.size(); i++) {
-        if (fileNames[i] == filePath) {
-            return i;
-        }
+    if (!indexed) {
+        fileIndex.clear();
+        for (int i = 0; i < static_cast<int>(fileNames.size()); i++) fileIndex.emplace(normalizeFileName(fileNames[i]), i);
+        indexed = true;
     }
-    return -1;
+    auto it = fileIndex.find(normalizeFileName(filePath));
+    return it == fileIndex.end() ? -1 : it->second;
 }
 
 int Package::getFileCount() {

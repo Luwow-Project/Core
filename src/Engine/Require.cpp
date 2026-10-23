@@ -50,19 +50,32 @@ static std::string formatPath(std::string root, std::string path) {
 
 namespace fs = std::filesystem;
 namespace Luwow::Engine {
+    // Where a package's modules are, as far as resolving them goes.
+    static const char* const PackageRoot = "/luwow-package";
+
+    // The working directory in the form the file system has it.
+    static std::string canonicalWorkingDirectory() {
+        std::error_code ec;
+        fs::path cwd = fs::current_path(ec);
+        fs::path canonical = fs::weakly_canonical(cwd, ec);
+        return (ec ? cwd : canonical).generic_string();
+    }
+
     RequireContext getRequireContext(lua_State* L) {
+        return getRequireContext(L, canonicalWorkingDirectory());
+    }
+
+    RequireContext getRequireContext(lua_State* L, const std::string& root) {
         RequireContext ctx;
         lua_Debug ar;
-        std::string callerPath;
-
-        ctx.root = fs::current_path().generic_string();
+        ctx.root = root;
 
         for (int level = 1;; level++) {
             if (!lua_getinfo(L, level, "s", &ar)) break;
-            if (!ar.source) continue;
+            if (!ar.source || (ar.what && strcmp(ar.what, "C") == 0) || ar.source[0] == '=') continue;
 
             std::string source = formatPath(ctx.root, stripExtension(ar.source));
-        
+
             // selfDir = directory portion of the key
             size_t lastSlash = source.rfind('/');
             ctx.selfDir = (lastSlash != std::string::npos) ? source.substr(0, lastSlash) : "";
@@ -70,8 +83,12 @@ namespace Luwow::Engine {
             std::string stem = (lastSlash != std::string::npos) ? source.substr(lastSlash + 1) : source;
             ctx.isInit = (stem == "init");
 
-            fs::path full = fs::path(ctx.root) / fs::path(ctx.selfDir).relative_path();
-            ctx.callerDir = full.lexically_normal().generic_string();
+            // A module found through an alias outside the root has an absolute chunk name
+            fs::path selfPath(ctx.selfDir);
+            fs::path self = (selfPath.is_absolute() ? selfPath : fs::path(ctx.root) / selfPath.relative_path()).lexically_normal();
+            ctx.selfDir = self.generic_string();
+            ctx.callerDir = (ctx.isInit ? self.parent_path() : self).generic_string();
+            break;
         }
 
         return ctx;
@@ -83,13 +100,14 @@ namespace Luwow::Engine {
         return LocatedModule { .path = moduleName, .type = LocatedModule::TYPE_NATIVE_MODULE };
     }
 
-    static std::string resolvePath(lua_State* L, RequireContext& ctx, const std::string path) {
-        fs::path fullPath = (fs::path(ctx.callerDir) / fs::path(path)).lexically_normal();
+    static std::string resolvePath(lua_State* L, const std::string& baseDir, const std::string path, bool onDisk = true) {
+        fs::path fullPath = (fs::path(baseDir) / fs::path(path)).lexically_normal();
 
-        if (fs::is_directory(fullPath)) {
+        if (onDisk && fs::is_directory(fullPath)) {
             fs::path initFilePath = fullPath / "init.luau";
+            if (!fs::exists(initFilePath)) initFilePath = fullPath / "init.lua";
             if (!fs::exists(initFilePath)) {
-                luaL_error(L, "Require path does not contain an init.luau file.");
+                luaL_error(L, "Require path does not contain an init.luau/init.lua file.");
                 return std::string();
             }
             fullPath = initFilePath;
@@ -128,9 +146,13 @@ namespace Luwow::Engine {
 
                 auto it = cfg->aliases.find(lowercasedAlias);
                 if (it != cfg->aliases.end()) {
-                    // Explicit config alias - always wins
-                    resolvedPath = fs::weakly_canonical(fs::path(it->second.qualified) / fs::path(modulePath));
-                    newPath = resolvePath(L, ctx, resolvedPath.generic_string());
+                    // Explicit config alias - always wins.
+                    fs::path aliased = fs::path(it->second.qualified) / fs::path(modulePath);
+                    if (aliased.is_relative()) aliased = fs::path(ctx.root) / aliased;
+
+                    // A package's modules aren't on disk, so its paths are worked out rather than looked up
+                    resolvedPath = engine->usesPackage() ? aliased.lexically_normal() : fs::weakly_canonical(aliased);
+                    newPath = resolvePath(L, ctx.callerDir, resolvedPath.generic_string(), !engine->usesPackage());
                     formattedPath = formatPath(ctx.root, newPath);
                 }
             }
@@ -141,9 +163,9 @@ namespace Luwow::Engine {
                 return module;
             }
             
-            if (alias == "self") {
-                resolvedPath = fs::weakly_canonical(ctx.selfDir / fs::path(modulePath));
-                newPath = addExtension(resolvedPath.generic_string());
+            if (alias == "self" && resolvedPath.empty()) {
+                newPath = resolvePath(L, ctx.selfDir, modulePath, !engine->usesPackage());
+                resolvedPath = newPath;
                 formattedPath = formatPath(ctx.root, newPath);
             }
 
@@ -162,7 +184,7 @@ namespace Luwow::Engine {
         } else {
             // Try packages and files
             if (!ctx.callerDir.empty()) {
-                newPath = resolvePath(L, ctx, path);
+                newPath = resolvePath(L, ctx.callerDir, path, !engine->usesPackage());
                 formattedPath = formatPath(ctx.root, newPath);
             } else {
                 luaL_error(L, "Module %s not found", path.c_str());
@@ -178,7 +200,7 @@ namespace Luwow::Engine {
     }
 
     std::optional<LocatedModule> resolveModule(Engine* engine, lua_State* L, const std::string path) {
-        RequireContext ctx = getRequireContext(L);
+        RequireContext ctx = engine->usesPackage() ? getRequireContext(L, PackageRoot) : getRequireContext(L);
         return resolveModule(engine, L, ctx, path);
     }
 
@@ -216,6 +238,9 @@ namespace Luwow::Engine {
             case LocatedModule::TYPE_PACKAGE: {
                 nret = engine->getModuleRef(L, formattedPath);
                 if (nret > 0) break;
+                if (engine->findInPackage(formattedPath) == -1) {
+                    luaL_error(L, "Module %s isn't in the package (looked for %s)", path_str.c_str(), formattedPath.c_str());
+                }
                 nret = engine->isInPackage(L, formattedPath, false);
                 chunkName = formattedPath;
                 break;

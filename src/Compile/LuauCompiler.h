@@ -10,9 +10,9 @@ public:
     LuauCompiler() = default;
     ~LuauCompiler() = default;
 
-    // Compiles a single Luau script file.
+    // Compiles a single Luau script file, stored in the package under name.
     // Returns true on success, false on failure.
-    bool compileScript(const std::string& scriptPath);
+    bool compileScript(const std::string& scriptPath, const std::string& name);
 
     // Saves the compiled package to the given output path.
     // Returns true on success, false on failure.

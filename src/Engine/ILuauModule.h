@@ -7,6 +7,8 @@ struct lua_State;
 struct LuauExport {
     const char* name;
     int (*func)(lua_State* L);
+    // Called in place of returning when func yielded and its coroutine is resumed, Left out for functions that don't yield.
+    int (*cont)(lua_State* L, int status) = nullptr;
 };
 
 namespace Luwow::Engine {

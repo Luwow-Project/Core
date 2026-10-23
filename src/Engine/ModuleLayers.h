@@ -2,6 +2,7 @@
 
 #include "ILuauModule.h"
 
+#include <atomic>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -13,8 +14,9 @@ class SerialLayer {
 public:
     void add(ILuauModule* module);
 
-    // Runs each module's loop in the order they were added, returns once all have finished
-    void run();
+    // Runs each module's loop in the order they were added, returns once all have finished, or once
+    // exiting is set, without starting the loops after it
+    void run(const std::atomic<bool>& exiting);
 
 private:
     std::vector<ILuauModule*> modules;

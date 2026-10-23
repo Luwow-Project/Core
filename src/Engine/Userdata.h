@@ -45,6 +45,9 @@ namespace Luwow::Engine {
         
             lua_pushstring(L, T::Name);
             lua_setfield(L, -2, "__type");
+
+            lua_pushstring(L, "The metatable is locked");
+            lua_setfield(L, -2, "__metatable");
         
             lua_pop(L, 1);
         }
@@ -65,7 +68,7 @@ namespace Luwow::Engine {
         }
     
     private:
-        static void Destructor(lua_State* L, void* ptr) {
+        static void Destructor(void* ptr) {
             static_cast<T*>(ptr)->~T();
         }
     

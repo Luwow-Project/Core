@@ -13,6 +13,9 @@ namespace Topics {
     inline constexpr const char* CompilerCompile = "compiler-compile";
     // Tells the debugger message.state is about to run the chunk named in message.data
     inline constexpr const char* DebuggerLoad = "debugger-load";
+    // Ends the program once the running module's loop returns, the engine handles it.
+    // The modules left are stopped without finishing their pending work.
+    inline constexpr const char* HostExit = "host-exit";
 
     /// Scheduler services libraries request, must be provided by a task scheduler library.
 
@@ -31,6 +34,13 @@ namespace Topics {
     // Cancels the pending watch of message.state without resuming it. Once this returns the socket isn't
     // polled anymore and can be closed. Replies result 1 if there was a watch.
     inline constexpr const char* SchedulerUnwatch = "scheduler-unwatch";
+    // Stops the scheduler right away for the program's end: its loop returns, and threads waiting on it
+    // aren't resumed anymore
+    inline constexpr const char* SchedulerExit = "scheduler-exit";
+    // Work outside the state that will resume a thread. message.result is 1 when it
+    // starts and -1 once it resumed the thread. While any is out, a script waiting on the scheduler isn't
+    // finished, and the scheduler waits for them before it's destroyed.
+    inline constexpr const char* SchedulerHold = "scheduler-hold";
 }
 
 // A message sent through the host's message bus

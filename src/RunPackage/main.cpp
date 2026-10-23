@@ -5,6 +5,7 @@
 
 #include "Package.h"
 #include "Engine.h"
+#include "StaticModules.h"
 #include "getExecutablePath.h"
 
 using Engine = Luwow::Engine::Engine;
@@ -47,12 +48,21 @@ int main(int argc, char* argv[]) {
 
     // Get the path of the last script saved in package
     std::filesystem::path scriptPath = getPackageLastScript(&package);
- 
-    // Put your own binary modules here and DLLs here
+
+    // Register the libraries bound into this executable
+    Luwow::registerStaticModules();
 
     Engine engine(package, packagePath);
-    engine.initialize(argc, argv);
+
+    #ifdef LUWOW_MODULE_HOST
+        // This executable exports the Luau API, so it can load the module DLLs the package's config lists.
+        // Relative paths are found next to the package.
+        engine.setDynamicModulesEnabled(true);
+    #endif
+
+    // The config is set before initializing so its DLLs are loaded before the script runs
     if (isConfigPath(scriptPath)) engine.setConfigPath(scriptPath);
+    engine.initialize(argc, argv);
     engine.run();
 
     return 0;

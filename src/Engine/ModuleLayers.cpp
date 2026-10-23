@@ -9,8 +9,9 @@ void SerialLayer::add(ILuauModule* module) {
     modules.push_back(module);
 }
 
-void SerialLayer::run() {
+void SerialLayer::run(const std::atomic<bool>& exiting) {
     for (ILuauModule* module : modules) {
+        if (exiting) return;
         module->run();
     }
 }
@@ -40,6 +41,8 @@ void ParallelLayer::startWorker(Worker& worker) {
             module->run();
         } catch (const std::exception& e) {
             std::cerr << "Parallel module " << module->getModuleName() << " failed: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "Parallel module " << module->getModuleName() << " failed due to an invalid exception.";
         }
     });
 }
