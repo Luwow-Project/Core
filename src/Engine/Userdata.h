@@ -25,6 +25,11 @@ namespace Luwow::Engine {
             SetterFn setter;
         };
     
+        static constexpr const char* MetatableKey() {
+            if constexpr (requires { T::MetatableName; }) return T::MetatableName;
+            else return T::Name;
+        }
+
         static void Register(lua_State* L, std::vector<MethodDef> methods, std::vector<PropertyDef> properties) {
             for (const auto& m : methods) GetMethods()[m.name] = m.func;
             for (const auto& p : properties) {
@@ -32,7 +37,7 @@ namespace Luwow::Engine {
                 if (p.setter) GetSetters()[p.name] = p.setter;
             }
         
-            luaL_newmetatable(L, T::Name);
+            luaL_newmetatable(L, MetatableKey());
         
             lua_pushcfunction(L, NameCall, T::Name);
             lua_setfield(L, -2, "__namecall");
@@ -57,14 +62,14 @@ namespace Luwow::Engine {
             void* memory = lua_newuserdatadtor(L, sizeof(T), Destructor);
             T* instance = new (memory) T(std::forward<Args>(args)...); // Placement new to construct the C++ object in Luau's memory block.
         
-            luaL_getmetatable(L, T::Name);
+            luaL_getmetatable(L, MetatableKey());
             lua_setmetatable(L, -2);
         
             return instance;
         }
     
         static T* Check(lua_State* L, int index) {
-            return static_cast<T*>(luaL_checkudata(L, index, T::Name));
+            return static_cast<T*>(luaL_checkudata(L, index, MetatableKey()));
         }
     
     private:
