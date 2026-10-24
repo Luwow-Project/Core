@@ -68,7 +68,7 @@ namespace Luwow::Engine {
         }
     
     private:
-        static void Destructor(void* ptr) {
+        static void Destructor(lua_State* L, void* ptr) {
             static_cast<T*>(ptr)->~T();
         }
     
