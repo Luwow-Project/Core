@@ -117,6 +117,12 @@ namespace Luwow::Engine {
         return resolvedPath;
     }
 
+    static std::string fileSystemSpelling(const std::string& path) {
+        std::error_code ec;
+        fs::path spelled = fs::weakly_canonical(path, ec);
+        return ec ? path : spelled.generic_string();
+    }
+
     std::optional<LocatedModule> resolveModule(Engine* engine, lua_State* L, RequireContext& ctx, const std::string path) {
         fs::path resolvedPath = "";
         std::string newPath = "";
@@ -177,7 +183,8 @@ namespace Luwow::Engine {
             if (engine->usesPackage()) {
                 return LocatedModule { .formattedPath = formattedPath, .type = LocatedModule::TYPE_PACKAGE };
             } else {
-                return LocatedModule { .path = newPath, .formattedPath = formattedPath, .type = LocatedModule::TYPE_FILE };
+                newPath = fileSystemSpelling(newPath);
+                return LocatedModule { .path = newPath, .formattedPath = formatPath(ctx.root, newPath), .type = LocatedModule::TYPE_FILE };
             }
         } else if (!(path.starts_with("./") || path.starts_with("../"))) {
             luaL_error(L, "Require path must always start with @, ./ or ../");
@@ -195,7 +202,8 @@ namespace Luwow::Engine {
         if (engine->usesPackage()) {
             return LocatedModule { .formattedPath = formattedPath, .type = LocatedModule::TYPE_PACKAGE };
         } else {
-            return LocatedModule { .path = newPath, .formattedPath = formattedPath, .type = LocatedModule::TYPE_FILE };
+            newPath = fileSystemSpelling(newPath);
+            return LocatedModule { .path = newPath, .formattedPath = formatPath(ctx.root, newPath), .type = LocatedModule::TYPE_FILE };
         }
     }
 
