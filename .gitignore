@@ -12,7 +12,6 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
-*.cmake
 !Sources.cmake
 
 # Visual Studio files

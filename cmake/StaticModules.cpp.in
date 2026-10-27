@@ -1,0 +1,10 @@
+#include "StaticModules.h"
+#include "Engine.h"
+
+#include <memory>
+
+@LUWOW_STATIC_MODULE_DECLARATIONS@
+namespace Luwow {
+    void registerStaticModules() {
+@LUWOW_STATIC_MODULE_REGISTRATIONS@    }
+}
