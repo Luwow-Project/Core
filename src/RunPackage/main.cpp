@@ -62,6 +62,7 @@ int main(int argc, char* argv[]) {
 
     // The config is set before initializing so its DLLs are loaded before the script runs
     if (isConfigPath(scriptPath)) engine.setConfigPath(scriptPath);
+    engine.setStartingArgsCount(argc > 1 ? 2 : 1);
     engine.initialize(argc, argv);
     engine.run();
 

@@ -51,6 +51,7 @@ int main(int argc, char* argv[]) {
 
     // The config is set before initializing so its DLLs are loaded before the script runs
     if (argc > 2) engine.setConfigPath(argv[2]);
+    engine.setStartingArgsCount(argc > 2 ? 3 : 2);
     engine.initialize(argc, argv);
     engine.run();
 

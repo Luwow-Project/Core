@@ -111,9 +111,9 @@ void Engine::initializeRequire() {
 
 void Engine::initializeGlobalArgs(int argc, char* argv[]) {
     lua_newtable(mainState);
-    for (int i = 2; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i) {
         lua_pushstring(mainState, argv[i]);
-        lua_rawseti(mainState, -2, i - 1);
+        lua_rawseti(mainState, -2, i);
     }
     lua_setreadonly(mainState, -1, true);
     lua_setglobal(mainState, "GlobalArgs");

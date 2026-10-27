@@ -92,6 +92,9 @@ public:
 
     // Runs the handler of message.topic right away on this thread. Returns false if no one handles it.
     virtual bool request(Message& message) = 0;
+
+    // How many arguments the program takes itself, its name included.
+    virtual int getStartingArgsCount() const = 0;
 };
 
 // Holds a host's state lock for a scope

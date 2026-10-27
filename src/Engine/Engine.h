@@ -62,6 +62,11 @@ public:
     void setConfigPath(std::filesystem::path path) { configPath = path; };
     void setConfig(Config* configRef) { config = configRef; };
 
+    // Sets the starting arguments count
+    void setStartingArgsCount(int count) { startingArgsCount = count; };
+    // Gets the starting arguments count
+    int getStartingArgsCount() const override { return startingArgsCount; };
+
     // Scripts are compiled when something handles compiler-compile, otherwise they come from the package.
     bool usesPackage() { return (!messageBus.hasHandler(Topics::CompilerCompile) && package.getFileCount() > 0); };
 
@@ -74,6 +79,8 @@ public:
     int compileAndExecute(lua_State* L, const std::string path, const std::string formattedPath, bool useGivenState);
     int loadModuleFromBytecode(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState);
     int executeModule(lua_State* L, const std::string& chunkName, const std::string& bytecode, bool saveRef, bool useGivenState);
+    
+    // Runs the engine.
     void run();
 
     // Stops the parallel modules and waits for their threads.
@@ -89,6 +96,7 @@ private:
 
     lua_State* mainState;
     Config* config = nullptr;
+    int startingArgsCount = 1;
 
     Package package;
     std::filesystem::path filePath;
