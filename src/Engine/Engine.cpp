@@ -369,6 +369,15 @@ void Engine::exitRequest(void* context, Message&) {
     static_cast<Engine*>(context)->exiting = true;
 }
 
+void Engine::packageReadRequest(void* context, Message& message) {
+    Engine* engine = static_cast<Engine*>(context);
+    if (!engine->usesPackage()) return;
+    int index = engine->package.indexOfFile(message.data);
+    if (index == -1) return;
+    message.data = engine->package.getFileContent(index);
+    message.result = 1;
+}
+
 void Engine::shutdownModules() {
     if (exiting) {
         Message exit;

@@ -117,6 +117,7 @@ private:
     // Set by host-exit
     std::atomic<bool> exiting = false;
     static void exitRequest(void* context, Message& message);
+    static void packageReadRequest(void* context, Message& message);
 };
 
 } // namespace Luwow::Engine

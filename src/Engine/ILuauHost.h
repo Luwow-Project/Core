@@ -16,6 +16,9 @@ namespace Topics {
     // Ends the program once the running module's loop returns, the engine handles it.
     // The modules left are stopped without finishing their pending work.
     inline constexpr const char* HostExit = "host-exit";
+    // Reads the file at the path in message.data from the package being run, replying with its contents in
+    // message.data and result 1. Result stays 0 when nothing is run from a package or it has no such file.
+    inline constexpr const char* PackageRead = "package-read";
 
     /// Scheduler services libraries request, must be provided by a task scheduler library.
 
