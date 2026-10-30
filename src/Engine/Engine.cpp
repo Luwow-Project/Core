@@ -47,6 +47,7 @@ Engine::Engine(Package context, std::filesystem::path filePath) :
     luauModuleRefs()
 {
     messageBus.handle(Topics::HostExit, &Engine::exitRequest, this);
+    messageBus.handle(Topics::PackageRead, &Engine::packageReadRequest, this);
 }
 
 Engine::~Engine() {

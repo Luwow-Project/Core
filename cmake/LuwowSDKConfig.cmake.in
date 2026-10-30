@@ -1,0 +1,109 @@
+# The Luwow SDK: builds library DLLs that the Luwow executables of the same release load.
+#
+#   find_package(LuwowSDK REQUIRED CONFIG)   # with LuwowSDK_DIR or CMAKE_PREFIX_PATH pointing at the SDK
+#   luwow_add_library(<target> NAME <id> MODES <modes...> SOURCES <sources...>)
+#
+# The DLLs only load into executables built with the same module ABI, LUWOW_SDK_ABI_VERSION.
+
+set(LUWOW_SDK_VERSION "@LUWOW_RELEASE_VERSION@")
+set(LUWOW_SDK_ABI_VERSION @LUWOW_MODULE_ABI_VERSION@)
+
+get_filename_component(LUWOW_SDK_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+set(LUWOW_SDK_HOST_IMPORT "@LUWOW_SDK_HOST_IMPORT@")
+set(LUWOW_MODULE_HOST_SOURCE "${CMAKE_CURRENT_LIST_DIR}/ModuleHost.cpp")
+
+# The engine's module headers and Luau's, with the definitions Luau was built with.
+if(NOT TARGET Luwow::SDK)
+    add_library(Luwow::SDK INTERFACE IMPORTED)
+    set_target_properties(Luwow::SDK PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${LUWOW_SDK_ROOT}/include"
+        INTERFACE_COMPILE_DEFINITIONS "@LUWOW_SDK_LUAU_DEFINITIONS@"
+        INTERFACE_COMPILE_FEATURES cxx_std_20
+    )
+    # The Luau API comes from the executable a DLL is loaded into.
+    if(WIN32)
+        set_property(TARGET Luwow::SDK PROPERTY INTERFACE_LINK_LIBRARIES "${LUWOW_SDK_ROOT}/lib/@LUWOW_SDK_HOST_LIBRARY@")
+    endif()
+endif()
+
+# Static libraries, such as a library's own helpers, end up inside the DLLs
+if(NOT DEFINED CMAKE_POSITION_INDEPENDENT_CODE)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
+if(WIN32)
+    set(LUWOW_MODULE_SUFFIX ".dll")
+elseif(APPLE)
+    set(LUWOW_MODULE_SUFFIX ".dylib")
+else()
+    set(LUWOW_MODULE_SUFFIX ".so")
+endif()
+
+# The DLLs go in a "libraries" folder of the build's output, as they would next to the executables
+if(NOT DEFINED LUWOW_MODULE_OUTPUT_DIRECTORY)
+    get_property(LUWOW_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    if(LUWOW_MULTI_CONFIG)
+        set(LUWOW_MODULE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/libraries/$<CONFIG>")
+    else()
+        set(LUWOW_MODULE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/libraries")
+    endif()
+endif()
+
+# Adds a library as a module DLL. The sources must use LUWOW_REGISTER_MODULE once, NAME is its module id and
+# DLL file name. MODES lists the run modes the library supports (SERIAL, PARALLEL), the first is the default,
+# and the LUWOW_<NAME>_MODE cache option picks one. The same function as in a Luwow source build, SHARED only.
+#   luwow_add_library(<target> NAME <id> MODES <modes...> SOURCES <sources...>)
+function(luwow_add_library target)
+    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "NAME" "MODES;SOURCES")
+    if(NOT ARG_NAME OR NOT ARG_NAME MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
+        message(FATAL_ERROR "luwow_add_library(${target}) needs a NAME that is a valid C identifier")
+    endif()
+
+    if(NOT ARG_MODES)
+        message(FATAL_ERROR "luwow_add_library(${target}) needs MODES, the run modes it supports: SERIAL and/or PARALLEL")
+    endif()
+    foreach(mode IN LISTS ARG_MODES)
+        if(NOT mode MATCHES "^(SERIAL|PARALLEL)$")
+            message(FATAL_ERROR "luwow_add_library(${target}) has an unknown mode '${mode}', expected SERIAL or PARALLEL")
+        endif()
+    endforeach()
+
+    string(TOUPPER ${ARG_NAME} upperName)
+    set(modeOption LUWOW_${upperName}_MODE)
+    list(GET ARG_MODES 0 defaultMode)
+    set(${modeOption} ${defaultMode} CACHE STRING "Run mode of the ${ARG_NAME} library: ${ARG_MODES}")
+    set_property(CACHE ${modeOption} PROPERTY STRINGS ${ARG_MODES})
+
+    set(runMode ${${modeOption}})
+    if(NOT runMode IN_LIST ARG_MODES)
+        message(FATAL_ERROR "${modeOption} is ${runMode}, but the ${ARG_NAME} library only supports: ${ARG_MODES}")
+    endif()
+    message(STATUS "Luwow library ${ARG_NAME}: ${runMode}")
+
+    add_library(${target} MODULE)
+    set_target_properties(${target} PROPERTIES
+        OUTPUT_NAME ${ARG_NAME}
+        PREFIX ""
+        SUFFIX ${LUWOW_MODULE_SUFFIX}
+        LIBRARY_OUTPUT_DIRECTORY ${LUWOW_MODULE_OUTPUT_DIRECTORY}
+    )
+    target_compile_definitions(${target} PRIVATE LUWOW_BUILDING_MODULE)
+    if(runMode STREQUAL "PARALLEL")
+        target_compile_definitions(${target} PRIVATE LUWOW_MODULE_PARALLEL=1)
+    else()
+        target_compile_definitions(${target} PRIVATE LUWOW_MODULE_PARALLEL=0)
+    endif()
+    target_link_libraries(${target} PRIVATE Luwow::SDK)
+
+    if(MSVC)
+        target_sources(${target} PRIVATE ${LUWOW_MODULE_HOST_SOURCE})
+        target_compile_definitions(${target} PRIVATE "LUWOW_HOST_IMPORT=\"${LUWOW_SDK_HOST_IMPORT}\"")
+        target_link_options(${target} PRIVATE "/DELAYLOAD:${LUWOW_SDK_HOST_IMPORT}")
+        target_link_libraries(${target} PRIVATE delayimp)
+    elseif(APPLE)
+        target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+    endif()
+
+    target_sources(${target} PRIVATE ${ARG_SOURCES})
+    install(TARGETS ${target} LIBRARY DESTINATION libraries COMPONENT libraries)
+endfunction()

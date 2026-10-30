@@ -50,7 +50,7 @@ public:
 
 } // namespace Luwow::Engine
 
-#define LUWOW_MODULE_ABI_VERSION 1
+#define LUWOW_MODULE_ABI_VERSION 2
 
 // The run mode a library was built with, from the LUWOW_<NAME>_MODE CMake option
 #if defined(LUWOW_MODULE_PARALLEL) && LUWOW_MODULE_PARALLEL
