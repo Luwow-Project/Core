@@ -3,12 +3,6 @@ set(LUWOW_EXECUTABLE_TARGET "Luwow.RunScript" CACHE STRING "Target name of the L
 if(NOT LUWOW_LIBRARY_MODE MATCHES "^(STATIC|SHARED)$")
     message(FATAL_ERROR "LUWOW_LIBRARY_MODE must be STATIC or SHARED, got '${LUWOW_LIBRARY_MODE}'")
 endif()
-if(NOT LUWOW_BUILD_EXECUTABLES AND NOT LUWOW_BUILD_LIBRARIES)
-    message(FATAL_ERROR "Nothing to build, enable LUWOW_BUILD_EXECUTABLES and/or LUWOW_BUILD_LIBRARIES")
-endif()
-if(NOT LUWOW_BUILD_EXECUTABLES AND LUWOW_LIBRARY_MODE STREQUAL "STATIC")
-    message(FATAL_ERROR "STATIC libraries are bound into the executable, enable LUWOW_BUILD_EXECUTABLES or set LUWOW_LIBRARY_MODE to SHARED")
-endif()
 
 # Static libraries such as uv_a end up inside module DLLs, which needs position-independent code on Linux
 if(LUWOW_LIBRARY_MODE STREQUAL "SHARED")
@@ -34,6 +28,7 @@ endif()
 
 set(LUWOW_MODULES_TEMPLATE "${CMAKE_CURRENT_LIST_DIR}/StaticModules.cpp.in")
 set(LUWOW_MODULE_HOST_SOURCE "${CMAKE_CURRENT_LIST_DIR}/ModuleHost.cpp")
+set(LUWOW_SDK_CONFIG_TEMPLATE "${CMAKE_CURRENT_LIST_DIR}/LuwowSDKConfig.cmake.in")
 
 # Exports the Luau VM from Luau.VM's objects, call once after adding Luau in SHARED mode
 function(luwow_export_luau_api)
@@ -143,6 +138,46 @@ function(luwow_add_library target)
 
     target_include_directories(${target} PRIVATE ${ENGINE_ROOT})
     target_sources(${target} PRIVATE ${ARG_SOURCES})
+endfunction()
+
+# Installs the SDK library DLLs are built with, as the "sdk" component.
+# SHARED builds only, since only their executables load DLLs. Call after adding the host executable.
+function(luwow_install_sdk host)
+    if(NOT LUWOW_LIBRARY_MODE STREQUAL "SHARED")
+        return()
+    endif()
+
+    file(STRINGS "${ENGINE_ROOT}/ILuauModule.h" abiLine REGEX "^#define LUWOW_MODULE_ABI_VERSION [0-9]+")
+    string(REGEX REPLACE ".* ([0-9]+)$" "\\1" LUWOW_MODULE_ABI_VERSION "${abiLine}")
+
+    # Luau's public definitions, which libraries must be compiled with
+    get_target_property(definitions Luau.VM INTERFACE_COMPILE_DEFINITIONS)
+    if(NOT definitions)
+        set(definitions "")
+    endif()
+    string(REPLACE "\"" "\\\"" LUWOW_SDK_LUAU_DEFINITIONS "${definitions}")
+
+    # The DLLs import from the executable by its file name, which ModuleHost redirects to whichever
+    # executable loads them, so one import library serves every Luwow executable
+    get_target_property(hostName ${host} OUTPUT_NAME)
+    set(LUWOW_SDK_HOST_IMPORT "${hostName}${CMAKE_EXECUTABLE_SUFFIX}")
+    set(LUWOW_SDK_HOST_LIBRARY "${hostName}.lib")
+
+    set(config "${CMAKE_BINARY_DIR}/sdk/LuwowSDKConfig.cmake")
+    configure_file(${LUWOW_SDK_CONFIG_TEMPLATE} ${config} @ONLY)
+
+    install(FILES ${config} ${LUWOW_MODULE_HOST_SOURCE} DESTINATION cmake COMPONENT sdk)
+    install(FILES
+        "${ENGINE_ROOT}/ILuauHost.h"
+        "${ENGINE_ROOT}/ILuauModule.h"
+        "${ENGINE_ROOT}/OffThread.h"
+        "${ENGINE_ROOT}/Userdata.h"
+        DESTINATION include COMPONENT sdk
+    )
+    install(DIRECTORY "${LUAU_ROOT}/VM/include/" DESTINATION include COMPONENT sdk FILES_MATCHING PATTERN "*.h")
+    if(MSVC)
+        install(FILES $<TARGET_LINKER_FILE:${host}> DESTINATION lib COMPONENT sdk)
+    endif()
 endfunction()
 
 # Generates the source registering every STATIC library, sets LUWOW_STATIC_MODULES_SOURCE
