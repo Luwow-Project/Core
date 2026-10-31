@@ -47,6 +47,7 @@ Engine::Engine(Package context, std::filesystem::path filePath) :
     luauModuleRefs()
 {
     messageBus.handle(Topics::HostExit, &Engine::exitRequest, this);
+    messageBus.handle(Topics::PackageRead, &Engine::packageReadRequest, this);
 }
 
 Engine::~Engine() {
@@ -308,6 +309,7 @@ int Engine::findInPackage(const std::string& path) {
         index = package.indexOfFile(folder + "/init.luau");
         if (index == -1) index = package.indexOfFile(folder + "/init.lua");
     }
+    if (index != -1 && package.isAsset(index)) return -1;
     return index;
 }
 
@@ -341,6 +343,9 @@ void Engine::run() {
             // Load bytecode from the first file in the package
             if (package.getFileCount() == 0) {
                 throw std::runtime_error("Package has no files");
+            }
+            if (package.isAsset(0)) {
+                throw std::runtime_error("The package's first file, " + package.getFileName(0) + ", is an asset rather than a script");
             }
 
             bytecode = package.getFileContent(0);

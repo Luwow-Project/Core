@@ -46,6 +46,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // The first file is the one run, so it has to be a script. Assets are only read.
+    if (package.getFileCount() == 0) {
+        std::cerr << "The package has no files: " << packagePath << std::endl;
+        return 1;
+    }
+    if (package.isAsset(0)) {
+        std::cerr << "The package's first file, " << package.getFileName(0) << ", is an asset, compile it with the main script first: "
+                  << packagePath << std::endl;
+        return 1;
+    }
+
     // Get the path of the last script saved in package
     std::filesystem::path scriptPath = getPackageLastScript(&package);
 

@@ -3,6 +3,8 @@
 #include <iostream>
 #include <cstdint>
 #include <filesystem>
+#include <cctype>
+#include <limits>
 
 namespace Luwow::Engine {
 
@@ -31,6 +33,16 @@ int Package::indexOfFile(const std::string& filePath) {
     }
     auto it = fileIndex.find(normalizeFileName(filePath));
     return it == fileIndex.end() ? -1 : it->second;
+}
+
+bool Package::isAssetName(const std::string& filePath) {
+    std::string extension = std::filesystem::path(filePath).extension().string();
+    for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return extension == ".png" || extension == ".jpeg" || extension == ".jpg" || extension == ".txt";
+}
+
+bool Package::isAsset(int index) {
+    return isAssetName(fileNames[index]);
 }
 
 int Package::getFileCount() {
@@ -70,6 +82,15 @@ bool Package::save(const std::string& packagePath) {
     // [script count]
     // Each script: [name length][name][bytecode length][bytecode]
     // End of file: [total size][4-byte signature]
+    // The format's limits: 65535 files, names up to 65535 bytes, and the whole package under 4 GB
+    
+    if (fileNames.size() > std::numeric_limits<uint16_t>::max()) return false;
+    uint64_t expectedSize = sizeof(uint16_t);
+    for (size_t i = 0; i < fileNames.size(); i++) {
+        if (fileNames[i].size() > std::numeric_limits<uint16_t>::max()) return false;
+        expectedSize += sizeof(uint16_t) + fileNames[i].size() + sizeof(uint32_t) + fileContents[i].size();
+    }
+    if (expectedSize > std::numeric_limits<uint32_t>::max() - 2 * sizeof(uint32_t)) return false;
 
     uint16_t fileCount = static_cast<uint16_t>(fileNames.size());
     out.write(reinterpret_cast<const char*>(&fileCount), sizeof(fileCount));
