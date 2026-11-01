@@ -19,7 +19,7 @@ public:
     int indexOfFile(const std::string& filePath);
     int getFileCount();
 
-    // Assets are the package's files kept as they are: .png, .jpeg/.jpg and .txt. Every other file is a script's bytecode.
+    // Assets are the package's files kept as they are: .png, .jpeg/.jpg, .ico and .txt. Every other file is a script's bytecode.
     static bool isAssetName(const std::string& filePath);
     bool isAsset(int index);
     std::string getFileName(int index);

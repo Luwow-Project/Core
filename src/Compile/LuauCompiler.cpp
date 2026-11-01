@@ -69,6 +69,10 @@ bool LuauCompiler::addAsset(const std::string& assetPath, const std::string& nam
         std::cerr << "Error: " << name << " isn't a JPEG image" << std::endl;
         return false;
     }
+    if (extension == ".ico" && !startsWith(asset, {0x00, 0x00, 0x01, 0x00})) {
+        std::cerr << "Error: " << name << " isn't an ICO icon" << std::endl;
+        return false;
+    }
 
     package.addFile(name, asset);
     return true;

@@ -13,7 +13,7 @@ namespace fs = std::filesystem;
 static const char* const Usage =
     "Usage: compile [-c <.config.luau>] [-s <main.luau> <script.luau | folder> ...] [-a <asset | folder> ...]\n"
     "               [-f <option=level> ...] [-o <output.pkg>]\n"
-    "  -a  asset files: .png, .jpeg, .jpg and .txt, or folders of them\n"
+    "  -a  asset files: .png, .jpeg, .jpg, .ico and .txt, or folders of them\n"
     "  -f  the Luau compiler's options: optimizationlevel, debuglevel and coveragelevel, each 0 to 2\n";
 
 // A file's full path, as the file system spells it
@@ -181,7 +181,7 @@ int main(int argc, char* argv[]) {
 
     for (const std::string& entry : args.assets) {
         if (!addEntry(entry, isAsset, true, files, added)) {
-            std::cerr << "Error: " << entry << " isn't an asset, which are .png, .jpeg, .jpg and .txt files.\n";
+            std::cerr << "Error: " << entry << " isn't an asset, which are .png, .jpeg, .jpg, .ico and .txt files.\n";
             return 1;
         }
     }

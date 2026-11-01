@@ -38,7 +38,7 @@ int Package::indexOfFile(const std::string& filePath) {
 bool Package::isAssetName(const std::string& filePath) {
     std::string extension = std::filesystem::path(filePath).extension().string();
     for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return extension == ".png" || extension == ".jpeg" || extension == ".jpg" || extension == ".txt";
+    return extension == ".png" || extension == ".jpeg" || extension == ".jpg" || extension == ".ico" || extension == ".txt";
 }
 
 bool Package::isAsset(int index) {
