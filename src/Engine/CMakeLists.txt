@@ -22,4 +22,5 @@ target_sources(Luwow.Engine PRIVATE
     Config.cpp
     Config.h
     Userdata.h
+    ExecutablePath.h
 )

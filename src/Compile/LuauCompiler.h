@@ -26,6 +26,11 @@ public:
     // Returns true on success, false on failure.
     bool savePackage(const std::string& outputPath);
 
+    // Writes runnerPath's executable with the package after it, which the runner runs when it's started
+    // without arguments. windowed marks a Windows runner as a GUI program.
+    // Returns true on success, false on failure, with the reason in error.
+    bool saveExecutable(const std::string& runnerPath, const std::string& outputPath, bool windowed, std::string& error);
+
 private:
     // Store the compiled package.
     Luwow::Engine::Package package;

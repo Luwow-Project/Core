@@ -38,7 +38,7 @@ int Package::indexOfFile(const std::string& filePath) {
 bool Package::isAssetName(const std::string& filePath) {
     std::string extension = std::filesystem::path(filePath).extension().string();
     for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return extension == ".png" || extension == ".jpeg" || extension == ".jpg" || extension == ".ico" || extension == ".txt";
+    return extension != ".luau" && extension != ".lua";
 }
 
 bool Package::isAsset(int index) {
@@ -74,10 +74,16 @@ bool Package::save(const std::string& packagePath) {
     std::ofstream out(packagePath, std::ios::out | std::ios::binary);
     if (!out)
     {
-        // std::cerr << "Could not open output file: " << packagePath << std::endl;
+        std::cerr << "Could not open output file: " << packagePath << std::endl;
         return false;
     }
+    if (!write(out)) return false;
+    out.close();
+    std::cout << "Package saved to " << packagePath << std::endl;
+    return !out.fail();
+}
 
+bool Package::write(std::ostream& out) {
     // Simple package format:
     // [script count]
     // Each script: [name length][name][bytecode length][bytecode]
@@ -108,10 +114,8 @@ bool Package::save(const std::string& packagePath) {
     }
     out.write(reinterpret_cast<const char*>(&totalSize), sizeof(totalSize));
     out.write(reinterpret_cast<const char*>(&packageSignature), sizeof(packageSignature));
-    out.close();
-    // std::cout << "Package saved to " << packagePath << std::endl;
-    // std::cout << "Total size: " << (totalSize + sizeof(totalSize) + sizeof(signature)) << " bytes" << std::endl;
-    return true;
+    std::cout << "Package saved to " << packagePath << std::endl;
+    return !out.fail();
 }
 
 bool Package::load(const std::string& packagePath) {
@@ -133,7 +137,6 @@ bool Package::load(const std::string& packagePath) {
     }
 
     // Then get the total size from before the signature
-
     // Seek to the end of the file and get the total size
     uint32_t packageSize;
     file.seekg(-sizeof(packageSize) -sizeof(signature), std::ios::end);

@@ -2,8 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
-#include <cctype>
-#include <initializer_list>
+#include <cstdint>
 
 using Package = Luwow::Engine::Package;
 
@@ -13,15 +12,6 @@ static bool readFile(const std::string& path, std::string& contents)
     std::ifstream file(path, std::ios::in | std::ios::binary);
     if (!file) return false;
     contents.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    return true;
-}
-
-// Whether data begins with the given bytes, an image's signature
-static bool startsWith(const std::string& data, std::initializer_list<unsigned char> bytes)
-{
-    if (data.size() < bytes.size()) return false;
-    size_t i = 0;
-    for (unsigned char byte : bytes) if (static_cast<unsigned char>(data[i++]) != byte) return false;
     return true;
 }
 
@@ -59,21 +49,6 @@ bool LuauCompiler::addAsset(const std::string& assetPath, const std::string& nam
         return false;
     }
 
-    std::string extension = std::filesystem::path(name).extension().string();
-    for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (extension == ".png" && !startsWith(asset, {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})) {
-        std::cerr << "Error: " << name << " isn't a PNG image" << std::endl;
-        return false;
-    }
-    if ((extension == ".jpeg" || extension == ".jpg") && !startsWith(asset, {0xFF, 0xD8, 0xFF})) {
-        std::cerr << "Error: " << name << " isn't a JPEG image" << std::endl;
-        return false;
-    }
-    if (extension == ".ico" && !startsWith(asset, {0x00, 0x00, 0x01, 0x00})) {
-        std::cerr << "Error: " << name << " isn't an ICO icon" << std::endl;
-        return false;
-    }
-
     package.addFile(name, asset);
     return true;
 }
@@ -81,4 +56,70 @@ bool LuauCompiler::addAsset(const std::string& assetPath, const std::string& nam
 bool LuauCompiler::savePackage(const std::string& outputPath)
 {
     return package.save(outputPath);
+}
+
+static bool markWindowed(std::string& executable, std::string& error)
+{
+    auto read16 = [&](size_t at) { return static_cast<uint16_t>(static_cast<uint8_t>(executable[at]) | (static_cast<uint8_t>(executable[at + 1]) << 8)); };
+    if (executable.size() < 0x40 || executable[0] != 'M' || executable[1] != 'Z') {
+        error = "only a Windows runner can be made windowed";
+        return false;
+    }
+    size_t header = static_cast<size_t>(read16(0x3C)) | (static_cast<size_t>(read16(0x3E)) << 16);
+    size_t subsystem = header + 24 + 68;
+    if (subsystem + 2 > executable.size() || executable.compare(header, 4, std::string("PE\0\0", 4)) != 0) {
+        error = "the runner has no PE header";
+        return false;
+    }
+    uint16_t current = read16(subsystem);
+    if (current != 2 && current != 3) {
+        error = "the runner's subsystem is " + std::to_string(current) + ", not the console's or Windows GUI's";
+        return false;
+    }
+    executable[subsystem] = 2;
+    executable[subsystem + 1] = 0;
+    return true;
+}
+
+bool LuauCompiler::saveExecutable(const std::string& runnerPath, const std::string& outputPath, bool windowed, std::string& error)
+{
+    std::error_code ec;
+    if (std::filesystem::equivalent(runnerPath, outputPath, ec)) {
+        error = "the executable would replace its runner";
+        return false;
+    }
+
+    std::string runner;
+    if (!readFile(runnerPath, runner)) {
+        error = "could not open the runner " + runnerPath;
+        return false;
+    }
+    if (windowed && !markWindowed(runner, error)) return false;
+
+    std::ofstream out(outputPath, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!out) {
+        error = "could not write " + outputPath;
+        return false;
+    }
+    out.write(runner.data(), static_cast<std::streamsize>(runner.size()));
+    if (!package.write(out)) {
+        error = "could not write the package into " + outputPath + " (it may be over 65535 files or 4 GB)";
+        return false;
+    }
+    out.close();
+    if (out.fail()) {
+        error = "could not write " + outputPath;
+        return false;
+    }
+
+#if !defined(_WIN32)
+    std::filesystem::permissions(outputPath,
+        std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec | std::filesystem::perms::others_exec,
+        std::filesystem::perm_options::add, ec);
+    if (ec) {
+        error = "could not make " + outputPath + " executable: " + ec.message();
+        return false;
+    }
+#endif
+    return true;
 }

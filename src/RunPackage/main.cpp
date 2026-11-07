@@ -6,7 +6,7 @@
 #include "Package.h"
 #include "Engine.h"
 #include "StaticModules.h"
-#include "getExecutablePath.h"
+#include "ExecutablePath.h"
 
 using Engine = Luwow::Engine::Engine;
 using Package = Luwow::Engine::Package;
@@ -28,17 +28,16 @@ static bool isConfigPath(std::filesystem::path path) {
 }
 
 int main(int argc, char* argv[]) {
-    std::filesystem::path exe_path = getExecutablePath();
+    std::filesystem::path exe_path = Luwow::Engine::getExecutablePath();
     std::filesystem::path packagePath = exe_path;
     Package package;
-    if (argc == 1) {
-        if (!package.load(exe_path.string())) {
+    
+    bool bundled = package.load(exe_path.string());
+    if (!bundled) {
+        if (argc == 1) {
             std::cerr << "Usage: runpackage <name.package>" << std::endl;
             return 1;
         }
-    }
-    else
-    {
         packagePath = argv[1];
         if (!package.load(packagePath.string())) {
             std::cerr << "Failed to load package: " << packagePath << std::endl;
@@ -73,7 +72,7 @@ int main(int argc, char* argv[]) {
 
     // The config is set before initializing so its DLLs are loaded before the script runs
     if (isConfigPath(scriptPath)) engine.setConfigPath(scriptPath);
-    engine.setStartingArgsCount(argc > 1 ? 2 : 1);
+    engine.setStartingArgsCount(bundled ? 1 : 2);
     engine.initialize(argc, argv);
     engine.run();
 

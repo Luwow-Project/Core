@@ -8,13 +8,24 @@
 #include <optional>
 #include <filesystem>
 
+#include "ExecutablePath.h"
+
 namespace fs = std::filesystem;
 
 static const char* const Usage =
     "Usage: compile [-c <.config.luau>] [-s <main.luau> <script.luau | folder> ...] [-a <asset | folder> ...]\n"
-    "               [-f <option=level> ...] [-o <output.pkg>]\n"
-    "  -a  asset files: .png, .jpeg, .jpg, .ico and .txt, or folders of them\n"
-    "  -f  the Luau compiler's options: optimizationlevel, debuglevel and coveragelevel, each 0 to 2\n";
+    "               [-f <option=level> ...] [-o <output.pkg>] [-e <executable> [-r <runpackage>] [-w]]\n"
+    "  -a  files (except .luau and .lua) stored as they are, or folders of them\n"
+    "  -f  the Luau compiler's options: optimizationlevel, debuglevel and coveragelevel, each 0 to 2\n"
+    "  -e  an executable that runs the package: the runner with the package after it\n"
+    "  -r  the runner for -e, the runpackage beside compile by default\n"
+    "  -w  for -e on Windows, opens no console\n";
+
+#if defined(_WIN32)
+static const char* const RunnerName = "runpackage.exe";
+#else
+static const char* const RunnerName = "runpackage";
+#endif
 
 // A file's full path, as the file system spells it
 static fs::path fullPath(const std::string& path) {
@@ -45,8 +56,7 @@ static std::optional<fs::path> commonFolder(const std::vector<fs::path>& files) 
 }
 
 static bool isScript(const fs::path& path) {
-    std::string extension = path.extension().string();
-    return extension == ".luau" || extension == ".lua";
+    return !Luwow::Engine::Package::isAssetName(path.generic_string());
 }
 
 static bool isAsset(const fs::path& path) {
@@ -102,6 +112,9 @@ struct Args {
     std::vector<std::string> assets;
     std::vector<std::string> flags;
     std::optional<std::string> output;
+    std::optional<std::string> executable;
+    std::optional<std::string> runner;
+    bool windowed = false;
     std::string error;
     bool ok = true;
 };
@@ -137,6 +150,14 @@ static Args parseArgs(int argc, char* argv[]) {
         } else if (arg == "-o" || arg == "--output") {
             if (i + 1 >= argc) { a.ok = false; a.error = "-o requires a value"; return a; }
             a.output = argv[++i];
+        } else if (arg == "-e" || arg == "--executable") {
+            if (i + 1 >= argc) { a.ok = false; a.error = "-e requires a value"; return a; }
+            a.executable = argv[++i];
+        } else if (arg == "-r" || arg == "--runner") {
+            if (i + 1 >= argc) { a.ok = false; a.error = "-r requires a value"; return a; }
+            a.runner = argv[++i];
+        } else if (arg == "-w" || arg == "--windowed") {
+            a.windowed = true;
         } else {
             a.ok = false;
             a.error = "Unexpected positional argument: " + arg;
@@ -158,9 +179,25 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (!args.output) {
-        std::cerr << "Error: an output file is required.\n" << Usage;
+    if (!args.output && !args.executable) {
+        std::cerr << "Error: an output package (-o) or executable (-e) is required.\n" << Usage;
         return 1;
+    }
+
+    if ((args.runner || args.windowed) && !args.executable) {
+        std::cerr << "Error: -r and -w are for an executable (-e).\n" << Usage;
+        return 1;
+    }
+
+    // The runner is checked before compiling, so a missing one fails fast
+    fs::path runner;
+    if (args.executable) {
+        std::error_code ec;
+        runner = args.runner ? fs::path(*args.runner) : Luwow::Engine::getExecutablePath().parent_path() / RunnerName;
+        if (!fs::is_regular_file(runner, ec)) {
+            std::cerr << "Error: there's no runner at " << runner.string() << (args.runner ? "" : ", give one with -r") << ".\n";
+            return 1;
+        }
     }
 
     Luau::CompileOptions options;
@@ -181,7 +218,7 @@ int main(int argc, char* argv[]) {
 
     for (const std::string& entry : args.assets) {
         if (!addEntry(entry, isAsset, true, files, added)) {
-            std::cerr << "Error: " << entry << " isn't an asset, which are .png, .jpeg, .jpg, .ico and .txt files.\n";
+            std::cerr << "Error: " << entry << " is a script, asset files are any other file.\n";
             return 1;
         }
     }
@@ -214,11 +251,21 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::string outputPath = *args.output;
-    if (!compiler.savePackage(outputPath))
-    {
-        std::cerr << "Failed to write package: " << outputPath << " (it can't be written, or is over 65535 files or 4 GB)" << std::endl;
-        return 1;
+    if (args.output) {
+        std::string outputPath = *args.output;
+        if (!compiler.savePackage(outputPath))
+        {
+            std::cerr << "Failed to write package: " << outputPath << " (it can't be written, or is over 65535 files or 4 GB)" << std::endl;
+            return 1;
+        }
+    }
+
+    if (args.executable) {
+        std::string error;
+        if (!compiler.saveExecutable(runner.string(), *args.executable, args.windowed, error)) {
+            std::cerr << "Failed to write executable: " << error << std::endl;
+            return 1;
+        }
     }
 
     return 0;

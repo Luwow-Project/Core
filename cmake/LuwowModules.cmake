@@ -140,6 +140,35 @@ function(luwow_add_library target)
     target_sources(${target} PRIVATE ${ARG_SOURCES})
 endfunction()
 
+# Copies each library's types, <ROOT>/<name>/scripts/<name>.luau, into a types folder, where a .config.luau
+# alias can point at them. ROOT is the calling folder by default, and DESTINATION its types folder. They're
+# copied again whenever one changes. With INSTALL_COMPONENT they're also installed into types in that component.
+#   luwow_copy_library_types(<names...> [ROOT <folder>] [DESTINATION <folder>] [INSTALL_COMPONENT <component>])
+function(luwow_copy_library_types)
+    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "ROOT;DESTINATION;INSTALL_COMPONENT" "")
+    if(NOT ARG_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "luwow_copy_library_types needs the names of the libraries")
+    endif()
+    if(NOT ARG_ROOT)
+        set(ARG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+    endif()
+    if(NOT ARG_DESTINATION)
+        set(ARG_DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/types")
+    endif()
+
+    foreach(name IN LISTS ARG_UNPARSED_ARGUMENTS)
+        set(typeFile "${ARG_ROOT}/${name}/scripts/${name}.luau")
+        if(NOT EXISTS "${typeFile}")
+            message(WARNING "The ${name} library has no types at ${typeFile}")
+            continue()
+        endif()
+        configure_file("${typeFile}" "${ARG_DESTINATION}/${name}.luau" COPYONLY)
+        if(ARG_INSTALL_COMPONENT)
+            install(FILES "${typeFile}" DESTINATION types COMPONENT ${ARG_INSTALL_COMPONENT})
+        endif()
+    endforeach()
+endfunction()
+
 # Installs the SDK library DLLs are built with, as the "sdk" component.
 # SHARED builds only, since only their executables load DLLs. Call after adding the host executable.
 function(luwow_install_sdk host)
@@ -172,6 +201,7 @@ function(luwow_install_sdk host)
         "${ENGINE_ROOT}/ILuauModule.h"
         "${ENGINE_ROOT}/OffThread.h"
         "${ENGINE_ROOT}/Userdata.h"
+        "${ENGINE_ROOT}/ExecutablePath.h"
         DESTINATION include COMPONENT sdk
     )
     install(DIRECTORY "${LUAU_ROOT}/VM/include/" DESTINATION include COMPONENT sdk FILES_MATCHING PATTERN "*.h")
