@@ -3,6 +3,11 @@ find_package(Threads REQUIRED)
 add_library(Luwow.Engine STATIC)
 target_include_directories(Luwow.Engine PRIVATE .)
 target_link_libraries(Luwow.Engine PUBLIC Luau.VM Luau.Common Luau.Config Threads::Threads ${CMAKE_DL_LIBS})
+
+if(WIN32)
+    target_link_libraries(Luwow.Engine PUBLIC kernel32)
+endif()
+
 target_sources(Luwow.Engine PRIVATE
     ILuauHost.h
     ILuauModule.h

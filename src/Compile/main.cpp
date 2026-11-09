@@ -258,6 +258,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "Failed to write package: " << outputPath << " (it can't be written, or is over 65535 files or 4 GB)" << std::endl;
             return 1;
         }
+        std::cout << "Successfuly wrote a package to: " + outputPath << std::endl; 
     }
 
     if (args.executable) {
@@ -266,7 +267,6 @@ int main(int argc, char* argv[]) {
             std::cerr << "Failed to write executable: " << error << std::endl;
             return 1;
         }
+        std::cout << "Successfully wrote an executable to: " + *args.executable << std::endl;
     }
-
-    return 0;
 }

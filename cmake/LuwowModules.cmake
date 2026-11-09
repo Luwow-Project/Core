@@ -4,6 +4,9 @@ if(NOT LUWOW_LIBRARY_MODE MATCHES "^(STATIC|SHARED)$")
     message(FATAL_ERROR "LUWOW_LIBRARY_MODE must be STATIC or SHARED, got '${LUWOW_LIBRARY_MODE}'")
 endif()
 
+set(CMAKE_C_STANDARD_LIBRARIES "" CACHE INTERNAL "")
+set(CMAKE_CXX_STANDARD_LIBRARIES "" CACHE INTERNAL "")
+
 # Static libraries such as uv_a end up inside module DLLs, which needs position-independent code on Linux
 if(LUWOW_LIBRARY_MODE STREQUAL "SHARED")
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -117,7 +120,7 @@ function(luwow_add_library target)
             target_sources(${target} PRIVATE ${LUWOW_MODULE_HOST_SOURCE})
             target_compile_definitions(${target} PRIVATE "LUWOW_HOST_IMPORT=\"${hostImport}\"")
             target_link_options(${target} PRIVATE "/DELAYLOAD:${hostImport}")
-            target_link_libraries(${target} PRIVATE delayimp)
+            target_link_libraries(${target} PRIVATE delayimp kernel32)
         endif()
 
         install(TARGETS ${target} LIBRARY DESTINATION bin/libraries COMPONENT libraries)

@@ -79,7 +79,6 @@ bool Package::save(const std::string& packagePath) {
     }
     if (!write(out)) return false;
     out.close();
-    std::cout << "Package saved to " << packagePath << std::endl;
     return !out.fail();
 }
 
@@ -114,7 +113,6 @@ bool Package::write(std::ostream& out) {
     }
     out.write(reinterpret_cast<const char*>(&totalSize), sizeof(totalSize));
     out.write(reinterpret_cast<const char*>(&packageSignature), sizeof(packageSignature));
-    std::cout << "Package saved to " << packagePath << std::endl;
     return !out.fail();
 }
 

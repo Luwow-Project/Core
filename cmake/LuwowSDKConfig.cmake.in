@@ -8,6 +8,9 @@
 set(LUWOW_SDK_VERSION "@LUWOW_RELEASE_VERSION@")
 set(LUWOW_SDK_ABI_VERSION @LUWOW_MODULE_ABI_VERSION@)
 
+set(CMAKE_C_STANDARD_LIBRARIES "" CACHE INTERNAL "")
+set(CMAKE_CXX_STANDARD_LIBRARIES "" CACHE INTERNAL "")
+
 get_filename_component(LUWOW_SDK_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(LUWOW_SDK_HOST_IMPORT "@LUWOW_SDK_HOST_IMPORT@")
 set(LUWOW_MODULE_HOST_SOURCE "${CMAKE_CURRENT_LIST_DIR}/ModuleHost.cpp")
@@ -99,7 +102,7 @@ function(luwow_add_library target)
         target_sources(${target} PRIVATE ${LUWOW_MODULE_HOST_SOURCE})
         target_compile_definitions(${target} PRIVATE "LUWOW_HOST_IMPORT=\"${LUWOW_SDK_HOST_IMPORT}\"")
         target_link_options(${target} PRIVATE "/DELAYLOAD:${LUWOW_SDK_HOST_IMPORT}")
-        target_link_libraries(${target} PRIVATE delayimp)
+        target_link_libraries(${target} PRIVATE delayimp kernel32)
     elseif(APPLE)
         target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
     endif()
