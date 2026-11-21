@@ -19,6 +19,11 @@ namespace Topics {
     // Reads the file at the path in message.data from the package being run, replying with its contents in
     // message.data and result 1. Result stays 0 when nothing is run from a package or it has no such file.
     inline constexpr const char* PackageRead = "package-read";
+    // Runs the main thread's events, for up to message.data milliseconds, so they go on while
+    // the main thread waits,  such as for a script. Result is 1 once they ran,
+    // and stays 0 off the main thread. Provided by a library with events on the main thread,
+    // a task scheduler may request it.
+    inline constexpr const char* MainThreadWait = "main-thread-wait";
 
     /// Scheduler services libraries request, must be provided by a task scheduler library.
 
