@@ -12,6 +12,7 @@
 #include <iostream>
 #include <fstream>
 #include <mutex>
+#include <string_view>
 
 namespace Luwow::Engine {
 
@@ -133,11 +134,38 @@ void Engine::initializeConfig() {
     lua_pop(mainState, 1);
 }
 
-// We do not have versioning or github specifications yet, these may come with an automated build system in the future.
+#ifndef LUWOW_RUNTIME_TAG
+#define LUWOW_RUNTIME_TAG ""
+#endif
+#ifndef LUWOW_RUNTIME_GIT_URL
+#define LUWOW_RUNTIME_GIT_URL ""
+#endif
+
 void Engine::initializeRuntimeSpecification() {
+    constexpr std::string_view tag = LUWOW_RUNTIME_TAG;
+    constexpr std::string_view gitUrl = LUWOW_RUNTIME_GIT_URL;
+
     lua_newtable(mainState);
     lua_pushstring(mainState, "luwow");
     lua_setfield(mainState, -2, "name");
+
+    lua_newtable(mainState);
+    lua_pushstring(mainState, tag.empty() ? "dev" : LUWOW_RUNTIME_TAG);
+    lua_setfield(mainState, -2, "display");
+    if (!tag.empty()) {
+        lua_newtable(mainState);
+        if (!gitUrl.empty()) {
+            lua_pushstring(mainState, LUWOW_RUNTIME_GIT_URL);
+            lua_setfield(mainState, -2, "url");
+        }
+        lua_pushstring(mainState, LUWOW_RUNTIME_TAG);
+        lua_setfield(mainState, -2, "commit");
+        lua_setreadonly(mainState, -1, true);
+        lua_setfield(mainState, -2, "git");
+    }
+    lua_setreadonly(mainState, -1, true);
+    lua_setfield(mainState, -2, "version");
+
     lua_pushstring(mainState, "https://github.com/Luwow-Project");
     lua_setfield(mainState, -2, "url");
     lua_setreadonly(mainState, -1, true);

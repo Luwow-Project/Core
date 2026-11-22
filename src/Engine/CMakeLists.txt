@@ -29,3 +29,23 @@ target_sources(Luwow.Engine PRIVATE
     Userdata.h
     ExecutablePath.h
 )
+
+set(LUWOW_RELEASE_URL "https://github.com/Luwow-Project/Release" CACHE STRING "The release repository the runtime is built from")
+set(runtimeTag "${LUWOW_RELEASE_VERSION}")
+if(NOT runtimeTag OR runtimeTag STREQUAL "dev")
+    set(runtimeTag "")
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        execute_process(COMMAND "${GIT_EXECUTABLE}" describe --tags --abbrev=0
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            RESULT_VARIABLE describeResult OUTPUT_VARIABLE describedTag
+            OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(describeResult EQUAL 0)
+            set(runtimeTag "${describedTag}")
+        endif()
+    endif()
+endif()
+target_compile_definitions(Luwow.Engine PRIVATE
+    "LUWOW_RUNTIME_TAG=\"${runtimeTag}\""
+    "LUWOW_RUNTIME_GIT_URL=\"${LUWOW_RELEASE_URL}\""
+)
